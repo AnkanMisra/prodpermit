@@ -1,0 +1,31 @@
+[package]
+name = "recovery-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[test]]
+name = "seeded_scenario"
+path = "tests/seeded_scenario.rs"
+
+[[test]]
+name = "investigation"
+path = "tests/investigation.rs"
+
+[[test]]
+name = "recovery_plan"
+path = "tests/recovery_plan.rs"

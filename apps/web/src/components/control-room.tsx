@@ -1,0 +1,341 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+import { IncidentDashboard } from "@/components/incident-dashboard";
+import {
+  approveRecovery,
+  compareReleases,
+  createOrResumeSession,
+  executeRecovery,
+  fetchAuditEvents,
+  fetchCurrentIncident,
+  fetchCurrentPlan,
+  prepareRecovery,
+  queryLogs,
+  rejectRecovery,
+  runDiagnostic,
+  verifyRecovery
+} from "@/lib/api";
+import type {
+  DiagnosticResult,
+  AuditEvent,
+  IncidentSnapshot,
+  LogEvent,
+  RecoveryPlan,
+  RecoveryVerification,
+  ReleaseComparison
+} from "@/lib/contracts";
+import { createInvestigationTools } from "@/lib/webmcp/investigation-tools";
+import { createExecutionTool, createRecoveryTools } from "@/lib/webmcp/recovery-tools";
+import {
+  WebMcpRegistry,
+  type ToolActivity,
+  type ToolDescriptor
+} from "@/lib/webmcp/registry";
+
+type LoadState =
+  | { kind: "loading" }
+  | { kind: "ready"; snapshot: IncidentSnapshot }
+  | { kind: "error"; message: string };
+
+type WebMcpState =
+  | { kind: "detecting"; tools: ToolDescriptor[]; activity: ToolActivity[] }
+  | { kind: "unsupported"; tools: ToolDescriptor[]; activity: ToolActivity[] }
+  | { kind: "supported"; tools: ToolDescriptor[]; activity: ToolActivity[] }
+  | { kind: "error"; tools: ToolDescriptor[]; activity: ToolActivity[]; message: string };
+
+export function ControlRoom() {
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
+  const [comparison, setComparison] = useState<ReleaseComparison>();
+  const [logs, setLogs] = useState<LogEvent[]>([]);
+  const [diagnostic, setDiagnostic] = useState<DiagnosticResult>();
+  const [plan, setPlan] = useState<RecoveryPlan>();
+  const [verification, setVerification] = useState<RecoveryVerification>();
+  const [actionError, setActionError] = useState<string>();
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const registryRef = useRef<WebMcpRegistry | null>(null);
+  const [webMcp, setWebMcp] = useState<WebMcpState>({
+    kind: "detecting",
+    tools: [],
+    activity: []
+  });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void createOrResumeSession(controller.signal)
+      .then(async (snapshot) => {
+        setState({ kind: "ready", snapshot });
+        const currentPlan = await fetchCurrentPlan(controller.signal);
+        setPlan(currentPlan ?? undefined);
+        setAuditEvents(await fetchAuditEvents(controller.signal));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        setState({
+          kind: "error",
+          message: error instanceof Error ? error.message : "The control room could not load."
+        });
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const modelContext = document.modelContext;
+    if (!modelContext) {
+      let active = true;
+      queueMicrotask(() => {
+        if (active) {
+          setWebMcp({ kind: "unsupported", tools: [], activity: [] });
+        }
+      });
+      return () => {
+        active = false;
+      };
+    }
+
+    const registry = new WebMcpRegistry({
+      modelContext,
+      onActivity: (event) =>
+        setWebMcp((current) => ({
+          ...current,
+          activity: [...current.activity, event].slice(-10)
+        })),
+      onToolsChanged: (tools) =>
+        setWebMcp((current) => ({ ...current, kind: "supported", tools }))
+    });
+    registryRef.current = registry;
+    const registrations = [
+      ...createInvestigationTools({
+        inspectIncident: async (_input, signal) => {
+          const snapshot = await fetchCurrentIncident(signal);
+          setState({ kind: "ready", snapshot });
+          return toolSuccess("Inspected the active checkout incident.", snapshot);
+        },
+        compareReleases: async (input, signal) => {
+          const result = await compareReleases(input, signal);
+          setComparison(result);
+          return toolSuccess(
+            `Compared ${input.baselineRelease} with ${input.candidateRelease}.`,
+            result
+          );
+        },
+        queryLogs: async (input, signal) => {
+          const result = await queryLogs(input, signal);
+          setLogs(result);
+          return toolSuccess(`Returned ${result.length} bounded log events.`, result);
+        },
+        runDiagnostic: async (_input, signal) => {
+          const result = await runDiagnostic(signal);
+          setDiagnostic(result);
+          return toolSuccess(`Database connectivity diagnostic ${result.status}.`, result);
+        }
+      }),
+      ...createRecoveryTools({
+        prepareRecovery: async (input, signal) => {
+          const result = await prepareRecovery(input, signal);
+          setPlan(result);
+          setAuditEvents(await fetchAuditEvents(signal));
+          setActionError(undefined);
+          return toolSuccess("Prepared recovery. Production state did not change.", result);
+        },
+        verifyRecovery: async (input, signal) => {
+          const result = await verifyRecovery(input.planId, signal);
+          setVerification(result);
+          setAuditEvents(await fetchAuditEvents(signal));
+          const snapshot = await fetchCurrentIncident(signal);
+          setState({ kind: "ready", snapshot });
+          return toolSuccess("Verified healthy recovery state.", result);
+        }
+      })
+    ];
+    void Promise.all(
+      registrations.map(({ tool, classification }) => registry.register(tool, classification))
+    ).catch((error: unknown) => {
+      setWebMcp((current) => ({
+        ...current,
+        kind: "error",
+        message: error instanceof Error ? error.message : "WebMCP registration failed."
+      }));
+    });
+    return () => {
+      registry.dispose();
+      registryRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const registry = registryRef.current;
+    if (!registry) {
+      return;
+    }
+    if (plan?.status !== "approved") {
+      registry.unregister("execute_approved_recovery");
+      return;
+    }
+    const execution = createExecutionTool(async (input, signal) => {
+      if (input.planId !== plan.planId) {
+        return {
+          ok: false,
+          error: {
+            code: "PLAN_ID_MISMATCH",
+            message: "This capability is bound to a different approved plan.",
+            retryable: false
+          }
+        };
+      }
+      const executed = await executeRecovery(input.planId, signal);
+      setPlan(executed);
+      setAuditEvents(await fetchAuditEvents(signal));
+      const snapshot = await fetchCurrentIncident(signal);
+      setState({ kind: "ready", snapshot });
+      return toolSuccess("Executed the exact approved recovery plan.", executed);
+    });
+    void registry.register(execution.tool, execution.classification).catch((error: unknown) => {
+      setActionError(
+        error instanceof Error ? error.message : "Execution capability registration failed."
+      );
+    });
+    return () => registry.unregister("execute_approved_recovery");
+  }, [plan]);
+
+  async function approvePlan() {
+    if (!plan) {
+      return;
+    }
+    try {
+      setActionError(undefined);
+      setPlan(await approveRecovery(plan.planId, plan.fingerprint));
+      setAuditEvents(await fetchAuditEvents());
+    } catch (error: unknown) {
+      setActionError(error instanceof Error ? error.message : "Plan approval failed.");
+    }
+  }
+
+  async function rejectPlan() {
+    if (!plan) {
+      return;
+    }
+    try {
+      setActionError(undefined);
+      setPlan(await rejectRecovery(plan.planId));
+      setAuditEvents(await fetchAuditEvents());
+    } catch (error: unknown) {
+      setActionError(error instanceof Error ? error.message : "Plan rejection failed.");
+    }
+  }
+
+  return (
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to incident
+      </a>
+      <header className="site-header">
+        <div>
+          <p className="product-mark">recovery-control-room</p>
+          <p className="product-subtitle">Browser-native incident recovery workspace</p>
+        </div>
+        <div className="header-signals">
+          <span className="signal-chip">{webMcpLabel(webMcp.kind)}</span>
+          <span className="signal-chip signal-critical">Incident active</span>
+        </div>
+      </header>
+      {renderLoadState({
+        state,
+        comparison,
+        logs,
+        diagnostic,
+        plan,
+        verification,
+        actionError,
+        auditEvents,
+        webMcp,
+        approvePlan,
+        rejectPlan
+      })}
+    </div>
+  );
+}
+
+function renderLoadState(input: {
+  state: LoadState;
+  comparison: ReleaseComparison | undefined;
+  logs: LogEvent[];
+  diagnostic: DiagnosticResult | undefined;
+  plan: RecoveryPlan | undefined;
+  verification: RecoveryVerification | undefined;
+  actionError: string | undefined;
+  auditEvents: AuditEvent[];
+  webMcp: WebMcpState;
+  approvePlan: () => Promise<void>;
+  rejectPlan: () => Promise<void>;
+}) {
+  switch (input.state.kind) {
+    case "loading":
+      return (
+        <main className="center-state" id="main-content" aria-live="polite">
+          <div className="loading-line" aria-hidden="true" />
+          <h1>Opening an isolated incident session</h1>
+          <p>Loading the deterministic checkout failure from the Rust service.</p>
+        </main>
+      );
+    case "ready":
+      return (
+        <IncidentDashboard
+          snapshot={input.state.snapshot}
+          investigation={{
+            comparison: input.comparison,
+            logs: input.logs,
+            diagnostic: input.diagnostic
+          }}
+          webMcp={input.webMcp}
+          recovery={{
+            plan: input.plan,
+            verification: input.verification,
+            actionError: input.actionError,
+            auditEvents: input.auditEvents,
+            onApprove: input.approvePlan,
+            onReject: input.rejectPlan
+          }}
+        />
+      );
+    case "error":
+      return (
+        <main className="center-state error-state" id="main-content" role="alert">
+          <p className="eyebrow">Session unavailable</p>
+          <h1>The incident could not be loaded</h1>
+          <p>{input.state.message}</p>
+          <button type="button" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+        </main>
+      );
+    default: {
+      const exhaustive: never = input.state;
+      return exhaustive;
+    }
+  }
+}
+
+function toolSuccess<T>(summary: string, data: T) {
+  return { ok: true, summary, data } as const;
+}
+
+function webMcpLabel(kind: WebMcpState["kind"]): string {
+  switch (kind) {
+    case "detecting":
+      return "Detecting WebMCP";
+    case "supported":
+      return "WebMCP supported";
+    case "unsupported":
+      return "WebMCP unsupported";
+    case "error":
+      return "WebMCP error";
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}

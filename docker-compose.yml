@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: crates/api/Dockerfile
+    environment:
+      ALLOWED_ORIGIN: http://localhost:3000
+      DATABASE_URL: sqlite:///data/recovery-control-room.db?mode=rwc
+      PORT: "8080"
+      RUST_LOG: info
+      SECURE_COOKIE: "false"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "8080:8080"
+    volumes:
+      - api-data:/data
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        BACKEND_URL: http://api:8080
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      BACKEND_URL: http://api:8080
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+volumes:
+  api-data:

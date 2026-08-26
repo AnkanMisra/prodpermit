@@ -1,0 +1,10 @@
+.git
+.next
+apps/web/.next
+apps/web/playwright-report
+apps/web/test-results
+node_modules
+output
+target
+*.db
+*.db-*

@@ -1,0 +1,37 @@
+[workspace]
+members = [
+  "crates/api",
+  "crates/domain",
+  "crates/persistence",
+]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.97"
+
+[workspace.dependencies]
+axum = "0.8.9"
+chrono = { version = "0.4.42", features = ["serde"] }
+http = "1.3.1"
+http-body-util = "0.1.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.145"
+sha2 = "0.10.9"
+sqlx = { version = "0.9.0", features = ["chrono", "migrate", "runtime-tokio", "sqlite", "uuid"] }
+thiserror = "2.0.16"
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tower = { version = "0.5.2", features = ["util"] }
+tower-http = { version = "0.7.0", features = ["catch-panic", "request-id", "timeout", "trace"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1.18.1", features = ["serde", "v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
