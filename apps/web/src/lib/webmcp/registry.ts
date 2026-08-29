@@ -42,6 +42,7 @@ export class WebMcpRegistry {
   readonly #onActivity: ((activity: ToolActivity) => void) | undefined;
   readonly #onToolsChanged: ((tools: ToolDescriptor[]) => void) | undefined;
   readonly #registrations = new Map<string, Registration>();
+  readonly #cleanupTokens = new Map<string, symbol>();
 
   constructor(options: RegistryOptions) {
     this.#modelContext = options.modelContext;
@@ -54,6 +55,7 @@ export class WebMcpRegistry {
     classification: ToolClassification,
     definitionFingerprint = toolDefinitionFingerprint(tool, classification)
   ): Promise<void> {
+    this.#cleanupTokens.delete(tool.name);
     const existing = this.#registrations.get(tool.name);
     if (existing?.definitionFingerprint === definitionFingerprint) {
       await existing.promise;
@@ -67,17 +69,20 @@ export class WebMcpRegistry {
     const controller = new AbortController();
     const wrapped = this.#withActivity(tool);
     const promise = this.#modelContext.registerTool(wrapped, { signal: controller.signal });
-    this.#registrations.set(tool.name, {
+    const registration = {
       classification,
       controller,
       definitionFingerprint,
       promise
-    });
+    } satisfies Registration;
+    this.#registrations.set(tool.name, registration);
     try {
       await promise;
       this.#emitToolsChanged();
     } catch (error: unknown) {
-      this.#registrations.delete(tool.name);
+      if (this.#registrations.get(tool.name) === registration) {
+        this.#registrations.delete(tool.name);
+      }
       controller.abort();
       throw error;
     }
@@ -88,9 +93,19 @@ export class WebMcpRegistry {
     if (!registration) {
       return;
     }
-    registration.controller.abort();
-    this.#registrations.delete(name);
-    this.#emitToolsChanged();
+    const token = Symbol(name);
+    this.#cleanupTokens.set(name, token);
+    queueMicrotask(() => {
+      if (this.#cleanupTokens.get(name) !== token) {
+        return;
+      }
+      this.#cleanupTokens.delete(name);
+      registration.controller.abort();
+      if (this.#registrations.get(name) === registration) {
+        this.#registrations.delete(name);
+        this.#emitToolsChanged();
+      }
+    });
   }
 
   tools(): ToolDescriptor[] {
@@ -100,6 +115,7 @@ export class WebMcpRegistry {
   }
 
   dispose(): void {
+    this.#cleanupTokens.clear();
     for (const registration of this.#registrations.values()) {
       registration.controller.abort();
     }
@@ -110,7 +126,7 @@ export class WebMcpRegistry {
   #withActivity(tool: WebMCP.ModelContextTool): WebMCP.ModelContextTool {
     return {
       ...tool,
-      execute: async (input, options) => {
+      execute: async (input, options = { signal: new AbortController().signal }) => {
         const invocationId = crypto.randomUUID();
         this.#emitActivity({
           invocationId,

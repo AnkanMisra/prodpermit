@@ -87,4 +87,46 @@ describe("WebMcpRegistry", () => {
       { name: "execute_approved_recovery", classification: "execution" }
     ]);
   });
+
+  test("supplies an execution signal when a native client omits options", async () => {
+    const modelContext = new FakeModelContext();
+    const registry = new WebMcpRegistry({ modelContext });
+    await registry.register(
+      {
+        name: "native_probe",
+        description: "Exercise the native invocation shape.",
+        execute: (_input, { signal }) => ({ signalAvailable: !signal.aborted })
+      },
+      "read-only"
+    );
+    const registered = modelContext.registrations[0]?.tool;
+    if (!registered) {
+      throw new Error("expected a registered tool");
+    }
+
+    const result = await Reflect.apply(registered.execute, registered, [{}]);
+
+    expect(result).toEqual({ signalAvailable: true });
+  });
+
+  test("defers cleanup so an immediate remount retains the registration", async () => {
+    const modelContext = new FakeModelContext();
+    const registry = new WebMcpRegistry({ modelContext });
+    const tool = {
+      name: "execute_approved_recovery",
+      description: "Execute one approved recovery.",
+      execute: () => ({ ok: true })
+    } satisfies WebMCP.ModelContextTool;
+
+    await registry.register(tool, "execution", "approved-plan");
+    registry.unregister(tool.name);
+    await registry.register(tool, "execution", "approved-plan");
+    await Promise.resolve();
+
+    expect(modelContext.registrations).toHaveLength(1);
+    expect(modelContext.registrations[0]?.signal?.aborted).toBe(false);
+    expect(registry.tools()).toEqual([
+      { name: "execute_approved_recovery", classification: "execution" }
+    ]);
+  });
 });

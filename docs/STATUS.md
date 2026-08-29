@@ -2,9 +2,9 @@
 
 ## Active phase
 
-Phase 6: full verification.
+Phase 7: deployment and submission preparation.
 
-Status: `in_progress`
+Status: `pending`
 
 ## Verified state
 
@@ -30,12 +30,14 @@ Status: `in_progress`
 - Phase 5 completed a sealed standard Codex Security scan with complete coverage. It validated two medium findings and one low finding in the captured snapshot.
 - All three security findings are fixed: reset no longer reissues replacement authority to revoked cookies, every session-scoped read checks active state, and anonymous session allocation prunes inactive rows and enforces a 256-session ceiling.
 - Strict Rust checks, all 26 Rust behavior tests, Bun production dependency audit, and the credential-pattern scan pass after the fixes.
+- Phase 6 passed the frozen Bun install, TypeScript, ESLint, 10 Vitest tests, Next.js production build, five Chromium journeys, Compose validation, and final API and web image builds.
+- Chrome for Testing 151 with native WebMCP flags discovered all six initial tools, invoked the real callbacks, exposed execution only after the human approval click, executed the rollback, removed execution, and verified `release_283` as healthy.
+- Visual inspection of `output/playwright/phase-4-recovery.png` confirmed readable fingerprint, evidence, resolved state, recovery verification, and audit history without clipping.
 
 ## Current work
 
-- Run every Rust, TypeScript, browser, container, secret, and repository release check from the final tree.
-- Inspect the final browser artifacts and console output.
-- Record the real supported WebMCP-client check as human-owned if this environment cannot perform it.
+- Keep Phase 7 pending until the participant authorizes deployment and submission preparation.
+- Preserve the verified local state while the participant performs their own acceptance testing.
 
 ## Blockers
 
@@ -52,4 +54,4 @@ The following later actions require human input:
 
 ## Next task
 
-Complete Phase 6. All locally executable release gates must pass, and the participant must receive the exact real-client check that remains.
+Do not start Phase 7 without participant authorization. Deployment, public naming, hosting credentials, and submission remain human-controlled.

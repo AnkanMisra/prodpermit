@@ -16,10 +16,18 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] }
     }
   ],
-  webServer: {
-    command: "bun run --cwd ../.. dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: true,
-    timeout: 120_000
-  }
+  webServer: [
+    {
+      command: "bun run --cwd ../.. dev:api",
+      url: "http://localhost:8080/api/health",
+      reuseExistingServer: true,
+      timeout: 180_000
+    },
+    {
+      command: "bun run --cwd ../.. dev:web",
+      url: "http://localhost:3000",
+      reuseExistingServer: true,
+      timeout: 180_000
+    }
+  ]
 });
