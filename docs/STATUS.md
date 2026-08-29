@@ -2,7 +2,7 @@
 
 ## Active phase
 
-Phase 4: recovery lifecycle.
+Phase 6: full verification.
 
 Status: `in_progress`
 
@@ -24,12 +24,18 @@ Status: `in_progress`
 - The native test suite, strict Clippy, TypeScript, ESLint, Vitest, Next.js production build, Playwright, and both Docker images pass.
 - Phase 3 added redacted release comparison, bounded structured logs, a cancellable database diagnostic, four investigative WebMCP tools, visible tool activity, and the protocol inspector.
 - A Playwright WebMCP adapter invoked the real page callbacks and found the authentication regression while confirming that no execution tool exists.
+- Phase 4 normalized recovery plans and evidence, made lifecycle mutations and audit writes atomic, added durable expiry and secure reset revocation, persisted recovery telemetry and diagnostics, and made Rust return the execution-capability decision.
+- The browser now shows the full fingerprint and evidence, restores and revokes approved capabilities across reload, executes one exact plan, verifies persisted before-and-after facts, and resets to an isolated broken session.
+- The Phase 4 Rust, TypeScript, ESLint, Vitest, production build, and five Chromium journeys pass.
+- Phase 5 completed a sealed standard Codex Security scan with complete coverage. It validated two medium findings and one low finding in the captured snapshot.
+- All three security findings are fixed: reset no longer reissues replacement authority to revoked cookies, every session-scoped read checks active state, and anonymous session allocation prunes inactive rows and enforces a 256-session ceiling.
+- Strict Rust checks, all 26 Rust behavior tests, Bun production dependency audit, and the credential-pattern scan pass after the fixes.
 
 ## Current work
 
-- Add the recovery-plan domain model, fingerprint, approval, rejection, expiry, and execution transaction.
-- Add `prepare_recovery`, `verify_recovery`, and the dynamically gated execution tool.
-- Add the plan review panel, recovery audit events, and healthy verification state.
+- Run every Rust, TypeScript, browser, container, secret, and repository release check from the final tree.
+- Inspect the final browser artifacts and console output.
+- Record the real supported WebMCP-client check as human-owned if this environment cannot perform it.
 
 ## Blockers
 
@@ -46,4 +52,4 @@ The following later actions require human input:
 
 ## Next task
 
-Implement Phase 4. The complete prepare, approve, execute, and verify journey must work while unapproved and replayed execution fail.
+Complete Phase 6. All locally executable release gates must pass, and the participant must receive the exact real-client check that remains.

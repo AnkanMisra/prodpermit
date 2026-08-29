@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { IncidentDashboard } from "@/components/incident-dashboard";
 import {
@@ -10,16 +10,18 @@ import {
   executeRecovery,
   fetchAuditEvents,
   fetchCurrentIncident,
-  fetchCurrentPlan,
+  fetchCurrentRecovery,
   prepareRecovery,
   queryLogs,
   rejectRecovery,
+  resetSession,
   runDiagnostic,
   verifyRecovery
 } from "@/lib/api";
 import type {
   DiagnosticResult,
   AuditEvent,
+  CurrentRecovery,
   IncidentSnapshot,
   LogEvent,
   RecoveryPlan,
@@ -51,23 +53,46 @@ export function ControlRoom() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [diagnostic, setDiagnostic] = useState<DiagnosticResult>();
   const [plan, setPlan] = useState<RecoveryPlan>();
+  const [executionCapability, setExecutionCapability] = useState<
+    CurrentRecovery["executionCapability"]
+  >({ kind: "absent", reason: "no_plan" });
   const [verification, setVerification] = useState<RecoveryVerification>();
   const [actionError, setActionError] = useState<string>();
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const registryRef = useRef<WebMcpRegistry | null>(null);
+  const sessionEpochRef = useRef(0);
   const [webMcp, setWebMcp] = useState<WebMcpState>({
     kind: "detecting",
     tools: [],
     activity: []
   });
 
+  const refreshRecoveryState = useCallback(
+    async (signal?: AbortSignal, epoch = sessionEpochRef.current) => {
+      const [snapshot, recovery, events] = await Promise.all([
+        fetchCurrentIncident(signal),
+        fetchCurrentRecovery(signal),
+        fetchAuditEvents(signal)
+      ]);
+      if (epoch !== sessionEpochRef.current) {
+        return;
+      }
+      setState({ kind: "ready", snapshot });
+      setPlan(recovery.plan ?? undefined);
+      setExecutionCapability(recovery.executionCapability);
+      setAuditEvents(events);
+    },
+    []
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     void createOrResumeSession(controller.signal)
       .then(async (snapshot) => {
         setState({ kind: "ready", snapshot });
-        const currentPlan = await fetchCurrentPlan(controller.signal);
-        setPlan(currentPlan ?? undefined);
+        const recovery = await fetchCurrentRecovery(controller.signal);
+        setPlan(recovery.plan ?? undefined);
+        setExecutionCapability(recovery.executionCapability);
         setAuditEvents(await fetchAuditEvents(controller.signal));
       })
       .catch((error: unknown) => {
@@ -136,17 +161,14 @@ export function ControlRoom() {
       ...createRecoveryTools({
         prepareRecovery: async (input, signal) => {
           const result = await prepareRecovery(input, signal);
-          setPlan(result);
-          setAuditEvents(await fetchAuditEvents(signal));
+          await refreshRecoveryState(signal);
           setActionError(undefined);
           return toolSuccess("Prepared recovery. Production state did not change.", result);
         },
         verifyRecovery: async (input, signal) => {
           const result = await verifyRecovery(input.planId, signal);
           setVerification(result);
-          setAuditEvents(await fetchAuditEvents(signal));
-          const snapshot = await fetchCurrentIncident(signal);
-          setState({ kind: "ready", snapshot });
+          await refreshRecoveryState(signal);
           return toolSuccess("Verified healthy recovery state.", result);
         }
       })
@@ -164,19 +186,20 @@ export function ControlRoom() {
       registry.dispose();
       registryRef.current = null;
     };
-  }, []);
+  }, [refreshRecoveryState]);
 
   useEffect(() => {
     const registry = registryRef.current;
     if (!registry) {
       return;
     }
-    if (plan?.status !== "approved") {
+    if (executionCapability.kind !== "available") {
       registry.unregister("execute_approved_recovery");
       return;
     }
+    const capability = executionCapability;
     const execution = createExecutionTool(async (input, signal) => {
-      if (input.planId !== plan.planId) {
+      if (input.planId !== capability.planId) {
         return {
           ok: false,
           error: {
@@ -187,19 +210,26 @@ export function ControlRoom() {
         };
       }
       const executed = await executeRecovery(input.planId, signal);
-      setPlan(executed);
-      setAuditEvents(await fetchAuditEvents(signal));
-      const snapshot = await fetchCurrentIncident(signal);
-      setState({ kind: "ready", snapshot });
+      await refreshRecoveryState(signal);
       return toolSuccess("Executed the exact approved recovery plan.", executed);
     });
-    void registry.register(execution.tool, execution.classification).catch((error: unknown) => {
-      setActionError(
-        error instanceof Error ? error.message : "Execution capability registration failed."
-      );
-    });
-    return () => registry.unregister("execute_approved_recovery");
-  }, [plan]);
+    void registry
+      .register(execution.tool, execution.classification, capability.fingerprint)
+      .catch((error: unknown) => {
+        setActionError(
+          error instanceof Error ? error.message : "Execution capability registration failed."
+        );
+      });
+    const delay = Math.max(0, new Date(capability.expiresAt).getTime() - Date.now());
+    const expiryTimer = window.setTimeout(() => {
+      registry.unregister("execute_approved_recovery");
+      void refreshRecoveryState();
+    }, delay);
+    return () => {
+      window.clearTimeout(expiryTimer);
+      registry.unregister("execute_approved_recovery");
+    };
+  }, [executionCapability, refreshRecoveryState]);
 
   async function approvePlan() {
     if (!plan) {
@@ -207,8 +237,8 @@ export function ControlRoom() {
     }
     try {
       setActionError(undefined);
-      setPlan(await approveRecovery(plan.planId, plan.fingerprint));
-      setAuditEvents(await fetchAuditEvents());
+      await approveRecovery(plan.planId, plan.fingerprint);
+      await refreshRecoveryState();
     } catch (error: unknown) {
       setActionError(error instanceof Error ? error.message : "Plan approval failed.");
     }
@@ -220,10 +250,26 @@ export function ControlRoom() {
     }
     try {
       setActionError(undefined);
-      setPlan(await rejectRecovery(plan.planId));
-      setAuditEvents(await fetchAuditEvents());
+      await rejectRecovery(plan.planId);
+      await refreshRecoveryState();
     } catch (error: unknown) {
       setActionError(error instanceof Error ? error.message : "Plan rejection failed.");
+    }
+  }
+
+  async function resetDemo() {
+    try {
+      setActionError(undefined);
+      sessionEpochRef.current += 1;
+      registryRef.current?.unregister("execute_approved_recovery");
+      await resetSession();
+      setComparison(undefined);
+      setLogs([]);
+      setDiagnostic(undefined);
+      setVerification(undefined);
+      await refreshRecoveryState(undefined, sessionEpochRef.current);
+    } catch (error: unknown) {
+      setActionError(error instanceof Error ? error.message : "Scenario reset failed.");
     }
   }
 
@@ -239,27 +285,34 @@ export function ControlRoom() {
         </div>
         <div className="header-signals">
           <span className="signal-chip">{webMcpLabel(webMcp.kind)}</span>
-          <span className="signal-chip signal-critical">Incident active</span>
+          <span className="signal-chip signal-critical">
+            {state.kind === "ready" && state.snapshot.incident.status === "resolved"
+              ? "Incident resolved"
+              : "Incident active"}
+          </span>
+          <button type="button" className="reset-button" onClick={resetDemo}>
+            Reset scenario
+          </button>
         </div>
       </header>
-      {renderLoadState({
-        state,
-        comparison,
-        logs,
-        diagnostic,
-        plan,
-        verification,
-        actionError,
-        auditEvents,
-        webMcp,
-        approvePlan,
-        rejectPlan
-      })}
+      <LoadContent
+        state={state}
+        comparison={comparison}
+        logs={logs}
+        diagnostic={diagnostic}
+        plan={plan}
+        verification={verification}
+        actionError={actionError}
+        auditEvents={auditEvents}
+        webMcp={webMcp}
+        approvePlan={approvePlan}
+        rejectPlan={rejectPlan}
+      />
     </div>
   );
 }
 
-function renderLoadState(input: {
+function LoadContent(input: {
   state: LoadState;
   comparison: ReleaseComparison | undefined;
   logs: LogEvent[];

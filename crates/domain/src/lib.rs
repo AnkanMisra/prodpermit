@@ -3,9 +3,10 @@
 mod recovery;
 
 pub use recovery::{
-    EvidenceId, HumanDecision, PrepareRecoveryCommand, RecoveryError, RecoveryEvidence,
-    RecoveryEvidenceKind, RecoveryEvidenceSet, RecoveryExecutionFacts, RecoveryFingerprint,
-    RecoveryPlanSpec, RecoveryPlanState, RecoveryVerification, RecoveryVerificationAfter,
+    EvidenceId, HumanDecision, PrepareRecoveryCommand, RecoveryDiagnosticEvidence, RecoveryError,
+    RecoveryEvidence, RecoveryEvidenceKind, RecoveryEvidenceSet, RecoveryExecutionFacts,
+    RecoveryFingerprint, RecoveryInvalidationReason, RecoveryPlanSpec, RecoveryPlanState,
+    RecoveryTelemetryEvidence, RecoveryVerification, RecoveryVerificationAfter,
     RecoveryVerificationBefore, RecoveryVerificationFacts, RecoveryVerificationMismatch,
     RecoveryVerificationOutcome, apply_human_decision, canonical_recovery_fingerprint,
     complete_execution, derive_verification, expire_recovery, invalidate_recovery,

@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+
 import type {
   DiagnosticResult,
   AuditEvent,
@@ -49,9 +53,15 @@ export function IncidentDashboard({
 
   return (
     <main className="dashboard" id="main-content">
-      <section className="incident-banner" aria-labelledby="incident-title">
+      <section
+        className="incident-banner"
+        aria-labelledby="incident-title"
+        aria-live="polite"
+      >
         <div>
-          <p className="eyebrow">Active incident</p>
+          <p className="eyebrow">
+            {snapshot.incident.status === "resolved" ? "Resolved incident" : "Active incident"}
+          </p>
           <h1 id="incident-title">{snapshot.incident.serviceId}</h1>
           <p className="incident-summary">{snapshot.incident.summary}</p>
         </div>
@@ -86,6 +96,9 @@ export function IncidentDashboard({
           <svg
             className="telemetry-chart"
             viewBox="0 0 640 220"
+            width="640"
+            height="220"
+            preserveAspectRatio="xMidYMid meet"
             role="img"
             aria-label="Checkout error rate over time"
           >
@@ -136,12 +149,24 @@ export function IncidentDashboard({
 
 function RecoveryPanel({ recovery }: { recovery: RecoveryView }) {
   const plan = recovery.plan;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const previousPlanId = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (plan?.planId && previousPlanId.current !== plan.planId) {
+      previousPlanId.current = plan.planId;
+      headingRef.current?.focus();
+    }
+  }, [plan?.planId]);
+
   return (
     <section className="panel recovery-panel" aria-labelledby="recovery-title">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Human authority boundary</p>
-          <h2 id="recovery-title">Recovery plan</h2>
+          <h2 id="recovery-title" ref={headingRef} tabIndex={-1}>
+            Recovery plan
+          </h2>
         </div>
         <span className={`plan-status plan-${plan?.status ?? "empty"}`}>
           {plan?.status ?? "Not prepared"}
@@ -175,9 +200,21 @@ function RecoveryPanel({ recovery }: { recovery: RecoveryView }) {
             </div>
             <div>
               <dt>Fingerprint</dt>
-              <dd><code>{plan.fingerprint.slice(0, 12)}</code></dd>
+              <dd className="fingerprint-value">
+                <code>{plan.fingerprint}</code>
+              </dd>
             </div>
           </dl>
+          <div className="plan-evidence">
+            <h3>Supporting evidence</h3>
+            <ol>
+              {plan.supportingEvidence.map((evidence) => (
+                <li key={evidence}>
+                  <code>{evidence}</code>
+                </li>
+              ))}
+            </ol>
+          </div>
           <ul className="precondition-list">
             {plan.preconditions.map((precondition) => (
               <li key={precondition}>{precondition}</li>
@@ -187,27 +224,43 @@ function RecoveryPanel({ recovery }: { recovery: RecoveryView }) {
             <span>Production changed</span>
             <strong>{plan.status === "executed" ? "Yes" : "No"}</strong>
           </div>
-          {plan.status === "prepared" ? (
+          {plan.status === "prepared" || plan.status === "approved" ? (
             <div className="plan-actions">
               <button type="button" className="secondary-button" onClick={recovery.onReject}>
-                Reject
+                {plan.status === "approved" ? "Revoke approval" : "Reject"}
               </button>
-              <button type="button" className="primary-button" onClick={recovery.onApprove}>
-                Approve exact plan
-              </button>
+              {plan.status === "prepared" ? (
+                <button type="button" className="primary-button" onClick={recovery.onApprove}>
+                  Approve exact plan
+                </button>
+              ) : null}
             </div>
           ) : null}
           {recovery.actionError ? <p className="action-error" role="alert">{recovery.actionError}</p> : null}
-          {recovery.verification ? (
-            <p className="verification-result" role="status">
-              Verified {recovery.verification.currentRelease}: {recovery.verification.healthStatus}
-            </p>
-          ) : null}
+          {recovery.verification ? <VerificationResult value={recovery.verification} /> : null}
         </div>
       ) : (
         <EmptyPanel text="Ask the agent to prepare the safest recovery. No production change has occurred." />
       )}
     </section>
+  );
+}
+
+function VerificationResult({ value }: { value: RecoveryVerification }) {
+  return (
+    <div className="verification-result" role="status">
+      <strong>
+        {value.outcome.kind === "passed" ? "Recovery verified" : "Verification mismatch"}
+      </strong>
+      <p>
+        {value.previousRelease} to {value.currentRelease}. Service {value.healthStatus}, database
+        diagnostic {value.diagnosticStatus}.
+      </p>
+      <p>
+        Healthy telemetry recorded at {new Date(value.after.telemetry.recordedAt).toLocaleTimeString()}
+        . Diagnostic <code>{value.after.diagnostic.code}</code> confirmed the target release.
+      </p>
+    </div>
   );
 }
 
@@ -321,6 +374,9 @@ function LogsPanel({ logs }: { logs: LogEvent[] }) {
 
 function ToolInspector({ webMcp }: { webMcp: WebMcpView }) {
   const latest = webMcp.activity.at(-1);
+  const executionAvailable = webMcp.tools.some(
+    (tool) => tool.name === "execute_approved_recovery"
+  );
   return (
     <section className="panel tool-panel" aria-labelledby="tools-title">
       <div className="panel-heading">
@@ -355,7 +411,9 @@ function ToolInspector({ webMcp }: { webMcp: WebMcpView }) {
         )}
       </div>
       <p className="capability-note">
-        Execution capability absent. Human approval is required before it can exist.
+        {executionAvailable
+          ? "Execution capability available for the exact approved plan."
+          : "Execution capability absent. Human approval is required before it can exist."}
       </p>
     </section>
   );

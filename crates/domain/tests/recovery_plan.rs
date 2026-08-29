@@ -1,8 +1,9 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use recovery_domain::{
     DiagnosticStatus, EvidenceId, HealthStatus, HumanDecision, IncidentId, IncidentStatus, PlanId,
-    PrepareRecoveryCommand, RecoveryError, RecoveryEvidence, RecoveryEvidenceKind,
-    RecoveryExecutionFacts, RecoveryPlanSpec, RecoveryPlanState, RecoveryVerificationFacts,
+    PrepareRecoveryCommand, RecoveryDiagnosticEvidence, RecoveryError, RecoveryEvidence,
+    RecoveryEvidenceKind, RecoveryExecutionFacts, RecoveryFingerprint, RecoveryInvalidationReason,
+    RecoveryPlanSpec, RecoveryPlanState, RecoveryTelemetryEvidence, RecoveryVerificationFacts,
     RecoveryVerificationMismatch, RecoveryVerificationOutcome, ReleaseId, ReleaseState, ServiceId,
     SessionId, apply_human_decision, canonical_recovery_fingerprint, complete_execution,
     derive_verification, expire_recovery, invalidate_recovery, prepare_recovery,
@@ -11,7 +12,7 @@ use recovery_domain::{
 use uuid::Uuid;
 
 #[test]
-fn preparation_requires_supported_unambiguous_evidence() {
+fn preparation_accepts_two_to_eight_supported_unique_evidence_records() {
     let mut missing = valid_command();
     missing.evidence = vec![auth_log(&missing, "log_db_auth_1")];
     assert_eq!(
@@ -40,13 +41,19 @@ fn preparation_requires_supported_unambiguous_evidence() {
         RecoveryError::DuplicateEvidence(evidence_id("log_db_auth_1"))
     );
 
-    let mut ambiguous = valid_command();
-    ambiguous
-        .evidence
-        .insert(1, auth_log(&ambiguous, "log_db_auth_2"));
+    let mut eight = valid_command();
+    eight.evidence = (1..=5)
+        .map(|index| auth_log(&eight, &format!("log_db_auth_{index}")))
+        .chain((1..=3).map(|index| diagnostic(&eight, &format!("diagnostic_db_{index}"))))
+        .collect();
+    let plan = prepare_recovery(eight.clone()).expect("eight relevant unique records are valid");
+    assert_eq!(plan.evidence().iter().count(), 8);
+
+    let ninth = diagnostic(&eight, "diagnostic_db_4");
+    eight.evidence.push(ninth);
     assert_eq!(
-        prepare_recovery(ambiguous).expect_err("two matching logs are ambiguous"),
-        RecoveryError::AmbiguousEvidence(RecoveryEvidenceKind::DatabaseAuthenticationFailureLog)
+        prepare_recovery(eight).expect_err("the ninth evidence record exceeds the policy bound"),
+        RecoveryError::TooManyEvidence
     );
 }
 
@@ -200,6 +207,41 @@ fn expiry_approval_replay_and_revocation_have_exact_semantics() {
 }
 
 #[test]
+fn invalidation_retains_the_authority_fact_that_changed() {
+    let invalidated_at = fixture_time() + Duration::minutes(2);
+    for reason in [
+        RecoveryInvalidationReason::SessionReset,
+        RecoveryInvalidationReason::ScenarioGenerationChanged,
+        RecoveryInvalidationReason::ActiveReleaseChanged,
+        RecoveryInvalidationReason::TargetBecameIneligible,
+    ] {
+        assert_eq!(
+            invalidate_recovery(RecoveryPlanState::Prepared, reason, invalidated_at),
+            RecoveryPlanState::Invalidated {
+                reason,
+                invalidated_at,
+            }
+        );
+    }
+}
+
+#[test]
+fn persisted_fingerprints_require_lowercase_sha256_hex() {
+    let canonical = canonical_recovery_fingerprint(&prepared_plan());
+    assert_eq!(
+        RecoveryFingerprint::parse(canonical.as_str().to_owned())
+            .expect("a canonical fingerprint reconstructs safely"),
+        canonical
+    );
+    for invalid in ["f".repeat(63), "g".repeat(64), "A".repeat(64)] {
+        assert_eq!(
+            RecoveryFingerprint::parse(invalid),
+            Err(RecoveryError::InvalidFingerprint)
+        );
+    }
+}
+
+#[test]
 fn execution_rechecks_every_authority_precondition() {
     let plan = prepared_plan();
     let approved_at = plan.created_at() + Duration::minutes(1);
@@ -221,7 +263,11 @@ fn execution_rechecks_every_authority_precondition() {
     ineligible.target_release_state = ReleaseState::Staged;
     let mut changed_fingerprint = valid_facts.clone();
     changed_fingerprint.stored_fingerprint = "0".repeat(64);
-    let invalidated = invalidate_recovery(approved.clone(), execution_time);
+    let invalidated = invalidate_recovery(
+        approved.clone(),
+        RecoveryInvalidationReason::SessionReset,
+        execution_time,
+    );
 
     let executing = validate_execution(&plan, approved.clone(), &valid_facts, execution_time)
         .expect("valid execution facts claim the plan");
@@ -303,13 +349,36 @@ fn execution_rechecks_every_authority_precondition() {
 }
 
 #[test]
+fn execution_rechecks_the_active_incident() {
+    let plan = prepared_plan();
+    let now = plan.created_at() + Duration::minutes(1);
+    let approved = approve(&plan, RecoveryPlanState::Prepared, now);
+
+    let mut wrong_incident = valid_execution_facts(&plan);
+    wrong_incident.active_incident_id = incident_id("inc_other");
+    assert_eq!(
+        validate_execution(&plan, approved.clone(), &wrong_incident, now),
+        Err(RecoveryError::ActiveIncidentMismatch)
+    );
+
+    let mut resolved_incident = valid_execution_facts(&plan);
+    resolved_incident.active_incident_status = IncidentStatus::Resolved;
+    assert_eq!(
+        validate_execution(&plan, approved, &resolved_incident, now),
+        Err(RecoveryError::IncidentNotActive)
+    );
+}
+
+#[test]
 fn verification_is_derived_from_persisted_before_and_after_facts() {
     let plan = prepared_plan();
     let state = executed_state(&plan);
     let verified_at = plan.created_at() + Duration::minutes(3);
-    let verification =
-        derive_verification(&plan, &state, valid_verification_facts(&plan), verified_at)
-            .expect("matching persisted facts verify the recovery");
+    let facts = valid_verification_facts(&plan);
+    let expected_telemetry = facts.telemetry.clone();
+    let expected_diagnostic = facts.diagnostic.clone();
+    let verification = derive_verification(&plan, &state, facts, verified_at)
+        .expect("matching persisted facts verify the recovery");
 
     assert_eq!(verification.outcome, RecoveryVerificationOutcome::Passed);
     assert_eq!(
@@ -319,10 +388,8 @@ fn verification_is_derived_from_persisted_before_and_after_facts() {
     assert_eq!(verification.before.evidence, plan.evidence().clone());
     assert_eq!(verification.after.release, *plan.target_release());
     assert_eq!(verification.after.health_status, HealthStatus::Healthy);
-    assert_eq!(
-        verification.after.diagnostic_status,
-        DiagnosticStatus::Passed
-    );
+    assert_eq!(verification.after.telemetry, expected_telemetry);
+    assert_eq!(verification.after.diagnostic, expected_diagnostic);
     assert_eq!(verification.verified_at, verified_at);
 }
 
@@ -339,12 +406,17 @@ fn verification_reports_all_persisted_fact_mismatches() {
     facts.health_status = HealthStatus::Critical;
     facts.incident_id = incident_id("inc_other");
     facts.incident_status = IncidentStatus::Active;
-    facts.telemetry_release = plan.expected_current_release().clone();
-    facts.telemetry_generation += 1;
-    facts.diagnostic_service_id = service_id("payments-api");
-    facts.diagnostic_release = plan.expected_current_release().clone();
-    facts.diagnostic_generation += 1;
-    facts.diagnostic_status = DiagnosticStatus::Failed;
+    facts.telemetry.plan_id = fixed_plan_id("00000000-0000-4000-8000-000000000098");
+    facts.telemetry.service_id = service_id("payments-api");
+    facts.telemetry.release_id = plan.expected_current_release().clone();
+    facts.telemetry.scenario_generation += 1;
+    facts.diagnostic.plan_id = fixed_plan_id("00000000-0000-4000-8000-000000000097");
+    facts.diagnostic.service_id = service_id("payments-api");
+    facts.diagnostic.release_id = plan.expected_current_release().clone();
+    facts.diagnostic.scenario_generation += 1;
+    facts.diagnostic.kind = "cache_connectivity".to_owned();
+    facts.diagnostic.status = DiagnosticStatus::Failed;
+    facts.diagnostic.code = "CACHE_CONNECTION_OK".to_owned();
     facts.stored_fingerprint = "f".repeat(64);
 
     let verification = derive_verification(
@@ -366,12 +438,17 @@ fn verification_reports_all_persisted_fact_mismatches() {
                 RecoveryVerificationMismatch::Health,
                 RecoveryVerificationMismatch::Incident,
                 RecoveryVerificationMismatch::IncidentStatus,
+                RecoveryVerificationMismatch::TelemetryPlan,
+                RecoveryVerificationMismatch::TelemetryService,
                 RecoveryVerificationMismatch::TelemetryRelease,
                 RecoveryVerificationMismatch::TelemetryGeneration,
+                RecoveryVerificationMismatch::DiagnosticPlan,
                 RecoveryVerificationMismatch::DiagnosticService,
                 RecoveryVerificationMismatch::DiagnosticRelease,
                 RecoveryVerificationMismatch::DiagnosticGeneration,
+                RecoveryVerificationMismatch::DiagnosticKind,
                 RecoveryVerificationMismatch::DiagnosticStatus,
+                RecoveryVerificationMismatch::DiagnosticCode,
                 RecoveryVerificationMismatch::Fingerprint,
             ]
         }
@@ -457,6 +534,8 @@ fn valid_execution_facts(plan: &RecoveryPlanSpec) -> RecoveryExecutionFacts {
     RecoveryExecutionFacts {
         session_id: plan.session_id().clone(),
         scenario_generation: plan.scenario_generation(),
+        active_incident_id: plan.incident_id().clone(),
+        active_incident_status: IncidentStatus::Active,
         active_release: plan.expected_current_release().clone(),
         target_release: plan.target_release().clone(),
         target_service_id: plan.service_id().clone(),
@@ -488,12 +567,29 @@ fn valid_verification_facts(plan: &RecoveryPlanSpec) -> RecoveryVerificationFact
         health_status: HealthStatus::Healthy,
         incident_id: plan.incident_id().clone(),
         incident_status: IncidentStatus::Resolved,
-        telemetry_release: plan.target_release().clone(),
-        telemetry_generation: plan.scenario_generation(),
-        diagnostic_service_id: plan.service_id().clone(),
-        diagnostic_release: plan.target_release().clone(),
-        diagnostic_generation: plan.scenario_generation(),
-        diagnostic_status: DiagnosticStatus::Passed,
+        telemetry: RecoveryTelemetryEvidence {
+            plan_id: plan.plan_id().clone(),
+            service_id: plan.service_id().clone(),
+            release_id: plan.target_release().clone(),
+            scenario_generation: plan.scenario_generation(),
+            recorded_at: plan.created_at() + Duration::minutes(2),
+            error_rate_percent: 0.3,
+            p95_latency_ms: 182,
+            request_rate_rps: 221,
+        },
+        diagnostic: RecoveryDiagnosticEvidence {
+            plan_id: plan.plan_id().clone(),
+            id: evidence_id("diagnostic_after_recovery"),
+            service_id: plan.service_id().clone(),
+            release_id: plan.target_release().clone(),
+            scenario_generation: plan.scenario_generation(),
+            kind: "database_connectivity".to_owned(),
+            status: DiagnosticStatus::Passed,
+            code: "DB_CONNECTION_OK".to_owned(),
+            summary: "checkout-api can authenticate to the primary database.".to_owned(),
+            evidence: "release_283 uses scram-sha-256 authentication.".to_owned(),
+            checked_at: plan.created_at() + Duration::minutes(2),
+        },
         stored_fingerprint: canonical_recovery_fingerprint(plan).as_str().to_owned(),
     }
 }

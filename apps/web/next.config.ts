@@ -4,6 +4,11 @@ const backendUrl = process.env.BACKEND_URL ?? "http://127.0.0.1:8080";
 
 const nextConfig = {
   poweredByHeader: false,
+  allowedDevOrigins: [
+    "ankan-linux.tailf04855.ts.net",
+    "100.121.232.117",
+    "192.168.31.133"
+  ],
   async headers() {
     return [
       {

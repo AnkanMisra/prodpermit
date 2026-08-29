@@ -65,4 +65,26 @@ describe("WebMcpRegistry", () => {
     expect(activity.map((event) => event.status)).toEqual(["running", "succeeded"]);
     expect(activity.every((event) => event.toolName === "inspect_incident")).toBe(true);
   });
+
+  test("replaces a dynamic tool when its authority fingerprint changes", async () => {
+    const modelContext = new FakeModelContext();
+    const registry = new WebMcpRegistry({ modelContext });
+    const tool = {
+      name: "execute_approved_recovery",
+      description: "Execute one approved recovery.",
+      inputSchema: { type: "object", properties: { planId: { type: "string" } } },
+      execute: () => ({ ok: true })
+    } satisfies WebMCP.ModelContextTool;
+
+    await registry.register(tool, "execution", "fingerprint-a");
+    const firstSignal = modelContext.registrations[0]?.signal;
+    await registry.register(tool, "execution", "fingerprint-b");
+
+    expect(modelContext.registrations).toHaveLength(2);
+    expect(firstSignal?.aborted).toBe(true);
+    expect(modelContext.registrations[1]?.signal?.aborted).toBe(false);
+    expect(registry.tools()).toEqual([
+      { name: "execute_approved_recovery", classification: "execution" }
+    ]);
+  });
 });

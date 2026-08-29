@@ -112,6 +112,6 @@ Controls:
 
 - SQLite and a persistent disk limit the backend to one instance.
 - An always-on host can still restart during a judge session.
+- The application bounds active sessions and prunes inactive rows, but the public host must still rate-limit anonymous session creation.
 - WebMCP is experimental and browser behavior may change before judging.
 - Tool annotations help clients classify data but do not guarantee model behavior.
-

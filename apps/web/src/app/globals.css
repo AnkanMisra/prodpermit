@@ -21,11 +21,13 @@
 
 html {
   background: var(--canvas);
+  overflow-x: hidden;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 15% -10%, rgb(76 94 146 / 22%), transparent 34rem),
     var(--canvas);
@@ -111,6 +113,17 @@ a {
   color: #ffad9f;
 }
 
+.reset-button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.4rem 0.7rem;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .dashboard {
   width: min(1480px, 100%);
   margin: 0 auto;
@@ -146,7 +159,7 @@ p {
 
 h1 {
   margin: 0;
-  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  font-size: clamp(1.5rem, 2.6vw, 2.35rem);
   letter-spacing: -0.04em;
 }
 
@@ -225,18 +238,21 @@ code {
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(20rem, 1fr);
+  align-items: start;
   gap: 0.75rem;
 }
 
 .investigation-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 0.75rem;
   margin-top: 0.75rem;
 }
 
 .panel {
   min-width: 0;
+  overflow: hidden;
   padding: 1.1rem;
 }
 
@@ -255,9 +271,11 @@ code {
 .telemetry-chart {
   display: block;
   width: 100%;
+  max-width: 100%;
   height: auto;
-  margin-top: 1rem;
-  overflow: visible;
+  aspect-ratio: 640 / 220;
+  margin-top: 0.75rem;
+  overflow: hidden;
 }
 
 .chart-axis {
@@ -568,6 +586,27 @@ code {
   font-size: 0.8rem;
 }
 
+.fingerprint-value code {
+  overflow-wrap: anywhere;
+}
+
+.plan-evidence {
+  margin-bottom: 1rem;
+}
+
+.plan-evidence h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.plan-evidence ol {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.75rem;
+}
+
 .precondition-list {
   margin: 0;
   padding-left: 1.25rem;
@@ -616,8 +655,17 @@ code {
 }
 
 .verification-result {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
   color: var(--healthy);
-  font-weight: 700;
+}
+
+.verification-result p {
+  margin: 0.35rem 0 0;
+  color: #c4cbd6;
+  font-size: 0.78rem;
+  font-weight: 400;
 }
 
 .center-state {

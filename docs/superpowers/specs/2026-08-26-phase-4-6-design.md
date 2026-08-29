@@ -15,7 +15,7 @@ The work is complete when these predicates hold:
 - Every recovery mutation and its audit event commit in one SQLite transaction.
 - Execution persists the release change, healthy service state, resolved incident, healthy telemetry, passing diagnostic, and links to the plan.
 - Verification derives its before-and-after response from persisted facts.
-- Reset revokes the old session, invalidates old authority, creates one replacement session, and converges on retry.
+- Reset revokes the old session, invalidates old authority, and creates one replacement session. A revoked cookie cannot retrieve that replacement.
 - The browser registers execution only from a Rust-produced capability decision.
 - Phase 5 isolation, race, boundary, and abuse tests pass. A standard repository security scan has no unresolved validated finding in scope.
 - Phase 6 local formatting, linting, tests, builds, browser checks, container checks, and repository checks pass.
@@ -72,7 +72,7 @@ Add `0004_recovery_lifecycle.sql`. Do not edit the already used `0003` migration
 The migration adds:
 
 - `revoked_at` on `demo_sessions`;
-- `session_resets` for retryable reset lineage;
+- `session_resets` for audit lineage without credential reissuance;
 - `service_releases` for explicit release ownership;
 - `diagnostic_contexts` for service, release, and generation evidence;
 - normalized recovery-plan columns with no authoritative `plan_json`;

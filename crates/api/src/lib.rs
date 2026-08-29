@@ -1,18 +1,22 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{
+        DefaultBodyLimit, FromRequest, Path, Query, Request, State, rejection::JsonRejection,
+    },
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use recovery_domain::{
-    AuditEvent, DiagnosticResult, IncidentSnapshot, LogEvent, LogSeverity, PlanError, PlanId,
-    RecoveryPlan, RecoveryVerification, ReleaseComparison, ReleaseId, SessionId, seeded_scenario,
+    AuditEvent, DiagnosticResult, HumanDecision, IncidentSnapshot, LogEvent, LogSeverity, PlanId,
+    RecoveryError, RecoveryPlanState, RecoveryVerification, RecoveryVerificationAfter,
+    RecoveryVerificationBefore, RecoveryVerificationOutcome, ReleaseComparison, ReleaseId,
+    SessionId, seeded_scenario,
 };
-use recovery_persistence::{Store, StoreError};
+use recovery_persistence::{PersistedRecoveryPlan, RecoveryPreparation, Store, StoreError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
@@ -26,10 +30,24 @@ pub struct AppConfig {
     pub secure_cookie: bool,
 }
 
-#[derive(Clone, Debug)]
+pub trait Clock: Send + Sync + 'static {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+#[derive(Debug)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
+#[derive(Clone)]
 struct AppState {
     store: Store,
     config: AppConfig,
+    clock: Arc<dyn Clock>,
 }
 
 #[derive(Debug, Error)]
@@ -42,6 +60,8 @@ enum ApiError {
     SessionNotFound,
     #[error("request input is invalid")]
     InvalidInput,
+    #[error("request body is too large")]
+    PayloadTooLarge,
     #[error("persistence failed")]
     Store(#[from] StoreError),
 }
@@ -75,7 +95,8 @@ impl IntoResponse for ApiError {
                 "The request origin is not allowed.",
                 false,
             ),
-            Self::SessionNotFound => (
+            Self::SessionNotFound
+            | Self::Store(StoreError::SessionNotFound | StoreError::SessionInactive) => (
                 StatusCode::UNAUTHORIZED,
                 "SESSION_NOT_FOUND",
                 "The demo session no longer exists. Create a new session.",
@@ -87,7 +108,37 @@ impl IntoResponse for ApiError {
                 "The request input is invalid.",
                 false,
             ),
-            Self::Store(StoreError::Plan(plan_error)) => plan_error_response(&plan_error),
+            Self::PayloadTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "PAYLOAD_TOO_LARGE",
+                "The request body exceeds 32 KiB.",
+                false,
+            ),
+            Self::Store(StoreError::Recovery(error)) => recovery_error_response(&error),
+            Self::Store(StoreError::RecoveryNotFound) => (
+                StatusCode::NOT_FOUND,
+                "PLAN_NOT_FOUND",
+                "The recovery plan was not found in this session.",
+                false,
+            ),
+            Self::Store(StoreError::InvalidRecoveryEvidence) => (
+                StatusCode::BAD_REQUEST,
+                "INVALID_RECOVERY_EVIDENCE",
+                "Recovery evidence is missing, unrelated, or unavailable.",
+                false,
+            ),
+            Self::Store(StoreError::ActiveRecoveryExists) => (
+                StatusCode::CONFLICT,
+                "PLAN_ALREADY_ACTIVE",
+                "Complete or invalidate the current recovery plan first.",
+                false,
+            ),
+            Self::Store(StoreError::SessionCapacity) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SESSION_CAPACITY_REACHED",
+                "The demo is at session capacity. Retry after an existing session expires.",
+                true,
+            ),
             Self::Store(error) => {
                 tracing::error!(error = %error, "persistence request failed");
                 (
@@ -113,6 +164,29 @@ impl IntoResponse for ApiError {
     }
 }
 
+struct ApiJson<T>(T);
+
+impl<S, T> FromRequest<S> for ApiJson<T>
+where
+    S: Send + Sync,
+    T: serde::de::DeserializeOwned,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        Json::<T>::from_request(request, state)
+            .await
+            .map(|Json(value)| Self(value))
+            .map_err(|rejection: JsonRejection| {
+                if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE {
+                    ApiError::PayloadTooLarge
+                } else {
+                    ApiError::InvalidInput
+                }
+            })
+    }
+}
+
 #[derive(Serialize)]
 struct DataResponse<T> {
     data: T,
@@ -125,10 +199,19 @@ struct HealthResponse {
 }
 
 pub fn build_router(store: Store, config: AppConfig) -> Router {
-    let state = AppState { store, config };
+    build_router_with_clock(store, config, Arc::new(SystemClock))
+}
+
+pub fn build_router_with_clock(store: Store, config: AppConfig, clock: Arc<dyn Clock>) -> Router {
+    let state = AppState {
+        store,
+        config,
+        clock,
+    };
     Router::new()
         .route("/api/health", get(health))
         .route("/api/demo/sessions", post(create_or_resume_session))
+        .route("/api/demo/session/reset", post(reset_session))
         .route("/api/incidents/current", get(current_incident))
         .route("/api/releases/compare", get(compare_releases))
         .route("/api/logs", get(query_logs))
@@ -149,6 +232,7 @@ pub fn build_router(store: Store, config: AppConfig) -> Router {
         )
         .route("/api/recovery-plans/{id}/verify", get(verify_recovery))
         .route("/api/audit-events", get(audit_events))
+        .layer(DefaultBodyLimit::max(32 * 1024))
         .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -168,12 +252,12 @@ async fn create_or_resume_session(
 
     if let Some(session_id) = session_id_from_headers(&headers)
         && let Some(snapshot) = state.store.load_snapshot(&session_id).await?
-        && snapshot.session.expires_at > Utc::now()
+        && snapshot.session.expires_at > state.clock.now()
     {
         return Ok((StatusCode::OK, Json(DataResponse { data: snapshot })).into_response());
     }
 
-    let snapshot = seeded_scenario(SessionId::new(), Utc::now());
+    let snapshot = seeded_scenario(SessionId::new(), state.clock.now());
     state.store.create_session(&snapshot).await?;
     let cookie = session_cookie(&snapshot.session.id, state.config.secure_cookie);
     let mut response = (StatusCode::CREATED, Json(DataResponse { data: snapshot })).into_response();
@@ -188,13 +272,13 @@ async fn current_incident(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<DataResponse<IncidentSnapshot>>, ApiError> {
-    let session_id = session_id_from_headers(&headers).ok_or(ApiError::SessionRequired)?;
+    let session_id = required_active_session(&state, &headers).await?;
     let snapshot = state
         .store
         .load_snapshot(&session_id)
         .await?
         .ok_or(ApiError::SessionNotFound)?;
-    if snapshot.session.expires_at <= Utc::now() {
+    if snapshot.session.expires_at <= state.clock.now() {
         return Err(ApiError::SessionNotFound);
     }
     Ok(Json(DataResponse { data: snapshot }))
@@ -212,7 +296,7 @@ async fn compare_releases(
     headers: HeaderMap,
     Query(query): Query<ReleaseComparisonQuery>,
 ) -> Result<Json<DataResponse<ReleaseComparison>>, ApiError> {
-    let session_id = required_session_id(&headers)?;
+    let session_id = required_active_session(&state, &headers).await?;
     let baseline = ReleaseId::parse(query.baseline_release).map_err(|_| ApiError::InvalidInput)?;
     let candidate =
         ReleaseId::parse(query.candidate_release).map_err(|_| ApiError::InvalidInput)?;
@@ -241,8 +325,8 @@ async fn query_logs(
     if !(5..=60).contains(&query.window_minutes) || !(1..=25).contains(&query.limit) {
         return Err(ApiError::InvalidInput);
     }
-    let session_id = required_session_id(&headers)?;
-    let since = Utc::now() - ChronoDuration::minutes(query.window_minutes);
+    let session_id = required_active_session(&state, &headers).await?;
+    let since = state.clock.now() - ChronoDuration::minutes(query.window_minutes);
     let logs = state
         .store
         .query_logs(&session_id, query.severity, since, query.limit)
@@ -273,7 +357,7 @@ struct DiagnosticRequest {
 async fn run_diagnostic(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<DiagnosticRequest>,
+    ApiJson(request): ApiJson<DiagnosticRequest>,
 ) -> Result<Json<DataResponse<DiagnosticResult>>, ApiError> {
     validate_mutation_headers(&headers, &state.config)?;
     let session_id = required_session_id(&headers)?;
@@ -282,7 +366,7 @@ async fn run_diagnostic(
             tokio::time::sleep(Duration::from_millis(300)).await;
             let result = state
                 .store
-                .run_database_diagnostic(&session_id, Utc::now())
+                .run_database_diagnostic(&session_id, state.clock.now())
                 .await?;
             Ok(Json(DataResponse { data: result }))
         }
@@ -297,34 +381,178 @@ struct PrepareRecoveryRequest {
     evidence_refs: Vec<String>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryPlanView {
+    plan_id: PlanId,
+    session_id: SessionId,
+    incident_id: recovery_domain::IncidentId,
+    service_id: recovery_domain::ServiceId,
+    current_release: ReleaseId,
+    target_release: ReleaseId,
+    expected_current_release: ReleaseId,
+    scenario_generation: i64,
+    reason: String,
+    supporting_evidence: Vec<String>,
+    risk_level: &'static str,
+    preconditions: Vec<String>,
+    fingerprint: String,
+    created_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    approved_at: Option<DateTime<Utc>>,
+    executed_at: Option<DateTime<Utc>>,
+    status: &'static str,
+}
+
+impl From<PersistedRecoveryPlan> for RecoveryPlanView {
+    fn from(plan: PersistedRecoveryPlan) -> Self {
+        let (status, approved_at, executed_at) = plan_state_fields(&plan.state);
+        let expected = plan.spec.expected_current_release().clone();
+        Self {
+            plan_id: plan.spec.plan_id().clone(),
+            session_id: plan.spec.session_id().clone(),
+            incident_id: plan.spec.incident_id().clone(),
+            service_id: plan.spec.service_id().clone(),
+            current_release: expected.clone(),
+            target_release: plan.spec.target_release().clone(),
+            expected_current_release: expected.clone(),
+            scenario_generation: plan.spec.scenario_generation(),
+            reason: plan.spec.reason().to_owned(),
+            supporting_evidence: plan
+                .spec
+                .evidence()
+                .iter()
+                .map(|item| item.id().as_str().to_owned())
+                .collect(),
+            risk_level: "low",
+            preconditions: vec![
+                format!("The active release remains {}.", expected.as_str()),
+                "The plan remains approved and unexpired.".to_owned(),
+                "The target remains the known healthy baseline.".to_owned(),
+            ],
+            fingerprint: plan.fingerprint.as_str().to_owned(),
+            created_at: plan.spec.created_at(),
+            expires_at: plan.spec.expires_at(),
+            approved_at,
+            executed_at,
+            status,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentRecoveryView {
+    plan: Option<RecoveryPlanView>,
+    execution_capability: ExecutionCapabilityView,
+}
+
+#[derive(Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+enum ExecutionCapabilityView {
+    Available {
+        plan_id: PlanId,
+        fingerprint: String,
+        expires_at: DateTime<Utc>,
+    },
+    Absent {
+        reason: &'static str,
+    },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryVerificationView {
+    plan_id: PlanId,
+    outcome: RecoveryVerificationOutcome,
+    previous_release: ReleaseId,
+    current_release: ReleaseId,
+    health_status: recovery_domain::HealthStatus,
+    diagnostic_status: recovery_domain::DiagnosticStatus,
+    before: RecoveryVerificationBefore,
+    after: RecoveryVerificationAfter,
+    verified_at: DateTime<Utc>,
+}
+
+impl From<RecoveryVerification> for RecoveryVerificationView {
+    fn from(value: RecoveryVerification) -> Self {
+        Self {
+            plan_id: value.plan_id,
+            outcome: value.outcome,
+            previous_release: value.before.release.clone(),
+            current_release: value.after.release.clone(),
+            health_status: value.after.health_status,
+            diagnostic_status: value.after.diagnostic.status,
+            before: value.before,
+            after: value.after,
+            verified_at: value.verified_at,
+        }
+    }
+}
+
 async fn create_recovery_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<PrepareRecoveryRequest>,
+    ApiJson(request): ApiJson<PrepareRecoveryRequest>,
 ) -> Result<Response, ApiError> {
     validate_mutation_headers(&headers, &state.config)?;
     let session_id = required_session_id(&headers)?;
     let target = ReleaseId::parse(request.target_release).map_err(|_| ApiError::InvalidInput)?;
     let plan = state
         .store
-        .create_recovery_plan(
+        .prepare_recovery(
             &session_id,
-            target,
-            request.reason,
-            request.evidence_refs,
-            Utc::now(),
+            RecoveryPreparation {
+                target_release: target,
+                reason: request.reason,
+                evidence_refs: request.evidence_refs,
+            },
+            state.clock.now(),
         )
         .await?;
-    Ok((StatusCode::CREATED, Json(DataResponse { data: plan })).into_response())
+    Ok((
+        StatusCode::CREATED,
+        Json(DataResponse {
+            data: RecoveryPlanView::from(plan),
+        }),
+    )
+        .into_response())
 }
 
 async fn current_recovery_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> Result<Json<DataResponse<Option<RecoveryPlan>>>, ApiError> {
+) -> Result<Json<DataResponse<CurrentRecoveryView>>, ApiError> {
     let session_id = required_session_id(&headers)?;
-    let plan = state.store.current_recovery_plan(&session_id).await?;
-    Ok(Json(DataResponse { data: plan }))
+    let plan = state
+        .store
+        .current_recovery(&session_id, state.clock.now())
+        .await?;
+    let execution_capability = match plan.as_ref() {
+        Some(PersistedRecoveryPlan {
+            spec,
+            fingerprint,
+            state: RecoveryPlanState::Approved { .. },
+        }) => ExecutionCapabilityView::Available {
+            plan_id: spec.plan_id().clone(),
+            fingerprint: fingerprint.as_str().to_owned(),
+            expires_at: spec.expires_at(),
+        },
+        Some(PersistedRecoveryPlan { state, .. }) => ExecutionCapabilityView::Absent {
+            reason: capability_absence_reason(state),
+        },
+        None => ExecutionCapabilityView::Absent { reason: "no_plan" },
+    };
+    Ok(Json(DataResponse {
+        data: CurrentRecoveryView {
+            plan: plan.map(RecoveryPlanView::from),
+            execution_capability,
+        },
+    }))
 }
 
 #[derive(Deserialize)]
@@ -337,67 +565,106 @@ async fn approve_recovery_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    Json(request): Json<ApprovalRequest>,
-) -> Result<Json<DataResponse<RecoveryPlan>>, ApiError> {
+    ApiJson(request): ApiJson<ApprovalRequest>,
+) -> Result<Json<DataResponse<RecoveryPlanView>>, ApiError> {
     validate_mutation_headers(&headers, &state.config)?;
     let session_id = required_session_id(&headers)?;
     let plan_id = PlanId::parse(&id).map_err(|_| ApiError::InvalidInput)?;
     let plan = state
         .store
-        .approve_recovery_plan(&session_id, &plan_id, &request.fingerprint, Utc::now())
+        .decide_recovery(
+            &session_id,
+            &plan_id,
+            HumanDecision::Approve {
+                fingerprint: request.fingerprint,
+            },
+            state.clock.now(),
+        )
         .await?;
-    Ok(Json(DataResponse { data: plan }))
+    Ok(Json(DataResponse {
+        data: RecoveryPlanView::from(plan),
+    }))
 }
 
 async fn reject_recovery_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<DataResponse<RecoveryPlan>>, ApiError> {
+) -> Result<Json<DataResponse<RecoveryPlanView>>, ApiError> {
     validate_mutation_headers(&headers, &state.config)?;
     let session_id = required_session_id(&headers)?;
     let plan_id = PlanId::parse(&id).map_err(|_| ApiError::InvalidInput)?;
     let plan = state
         .store
-        .reject_recovery_plan(&session_id, &plan_id, Utc::now())
+        .decide_recovery(
+            &session_id,
+            &plan_id,
+            HumanDecision::Reject,
+            state.clock.now(),
+        )
         .await?;
-    Ok(Json(DataResponse { data: plan }))
+    Ok(Json(DataResponse {
+        data: RecoveryPlanView::from(plan),
+    }))
 }
 
 async fn execute_recovery_plan(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<DataResponse<RecoveryPlan>>, ApiError> {
+) -> Result<Json<DataResponse<RecoveryPlanView>>, ApiError> {
     validate_mutation_headers(&headers, &state.config)?;
     let session_id = required_session_id(&headers)?;
     let plan_id = PlanId::parse(&id).map_err(|_| ApiError::InvalidInput)?;
     let plan = state
         .store
-        .execute_recovery_plan(&session_id, &plan_id, Utc::now())
+        .execute_recovery(&session_id, &plan_id, state.clock.now())
         .await?;
-    Ok(Json(DataResponse { data: plan }))
+    Ok(Json(DataResponse {
+        data: RecoveryPlanView::from(plan),
+    }))
 }
 
 async fn verify_recovery(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<DataResponse<RecoveryVerification>>, ApiError> {
+) -> Result<Json<DataResponse<RecoveryVerificationView>>, ApiError> {
     let session_id = required_session_id(&headers)?;
     let plan_id = PlanId::parse(&id).map_err(|_| ApiError::InvalidInput)?;
     let verification = state
         .store
-        .verify_recovery(&session_id, &plan_id, Utc::now())
+        .verify_recovery(&session_id, &plan_id, state.clock.now())
         .await?;
-    Ok(Json(DataResponse { data: verification }))
+    Ok(Json(DataResponse {
+        data: RecoveryVerificationView::from(verification),
+    }))
+}
+
+async fn reset_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    validate_mutation_headers(&headers, &state.config)?;
+    let session_id = required_session_id(&headers)?;
+    let snapshot = state
+        .store
+        .reset_session(&session_id, state.clock.now())
+        .await?;
+    let cookie = session_cookie(&snapshot.session.id, state.config.secure_cookie);
+    let mut response = (StatusCode::OK, Json(DataResponse { data: snapshot })).into_response();
+    response.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&cookie).map_err(|_| ApiError::SessionNotFound)?,
+    );
+    Ok(response)
 }
 
 async fn audit_events(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<DataResponse<Vec<AuditEvent>>>, ApiError> {
-    let session_id = required_session_id(&headers)?;
+    let session_id = required_active_session(&state, &headers).await?;
     let events = state.store.audit_events(&session_id, 100).await?;
     Ok(Json(DataResponse { data: events }))
 }
@@ -431,6 +698,22 @@ fn required_session_id(headers: &HeaderMap) -> Result<SessionId, ApiError> {
     session_id_from_headers(headers).ok_or(ApiError::SessionRequired)
 }
 
+async fn required_active_session(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<SessionId, ApiError> {
+    let session_id = required_session_id(headers)?;
+    if state
+        .store
+        .session_is_active(&session_id, state.clock.now())
+        .await?
+    {
+        Ok(session_id)
+    } else {
+        Err(ApiError::SessionNotFound)
+    }
+}
+
 fn session_cookie(session_id: &SessionId, secure: bool) -> String {
     let secure_attribute = if secure { "; Secure" } else { "" };
     format!(
@@ -441,57 +724,118 @@ fn session_cookie(session_id: &SessionId, secure: bool) -> String {
     )
 }
 
-fn plan_error_response(error: &PlanError) -> (StatusCode, &'static str, &'static str, bool) {
+fn plan_state_fields(
+    state: &RecoveryPlanState,
+) -> (&'static str, Option<DateTime<Utc>>, Option<DateTime<Utc>>) {
+    match state {
+        RecoveryPlanState::Prepared => ("prepared", None, None),
+        RecoveryPlanState::Approved { approved_at, .. } => ("approved", Some(*approved_at), None),
+        RecoveryPlanState::Executing { approved_at, .. } => ("executing", Some(*approved_at), None),
+        RecoveryPlanState::Executed {
+            approved_at,
+            executed_at,
+            ..
+        } => ("executed", Some(*approved_at), Some(*executed_at)),
+        RecoveryPlanState::Rejected { .. } => ("rejected", None, None),
+        RecoveryPlanState::Expired => ("expired", None, None),
+        RecoveryPlanState::Invalidated { .. } => ("invalidated", None, None),
+    }
+}
+
+fn capability_absence_reason(state: &RecoveryPlanState) -> &'static str {
+    match state {
+        RecoveryPlanState::Prepared => "not_approved",
+        RecoveryPlanState::Approved { .. } => "available",
+        RecoveryPlanState::Executing { .. }
+        | RecoveryPlanState::Executed { .. }
+        | RecoveryPlanState::Rejected { .. } => "terminal",
+        RecoveryPlanState::Expired => "expired",
+        RecoveryPlanState::Invalidated { .. } => "invalidated",
+    }
+}
+
+fn recovery_error_response(
+    error: &RecoveryError,
+) -> (StatusCode, &'static str, &'static str, bool) {
     match error {
-        PlanError::InvalidTarget => (
+        RecoveryError::InvalidTarget => (
             StatusCode::BAD_REQUEST,
             "INVALID_TARGET_RELEASE",
             "The target release is not an eligible rollback.",
             false,
         ),
-        PlanError::InvalidInput => (
+        RecoveryError::InvalidEvidenceId
+        | RecoveryError::InvalidGeneration
+        | RecoveryError::InvalidReason
+        | RecoveryError::TimestampOverflow
+        | RecoveryError::UnsupportedEvidence(_)
+        | RecoveryError::DuplicateEvidence(_)
+        | RecoveryError::MissingEvidence(_)
+        | RecoveryError::TooManyEvidence
+        | RecoveryError::EvidenceSessionMismatch(_)
+        | RecoveryError::EvidenceServiceMismatch(_)
+        | RecoveryError::EvidenceReleaseMismatch(_)
+        | RecoveryError::EvidenceGenerationMismatch(_) => (
             StatusCode::BAD_REQUEST,
             "INVALID_PLAN_INPUT",
             "The recovery reason or evidence is invalid.",
             false,
         ),
-        PlanError::FingerprintMismatch => (
+        RecoveryError::FingerprintMismatch | RecoveryError::InvalidFingerprint => (
             StatusCode::CONFLICT,
             "PLAN_FINGERPRINT_MISMATCH",
             "The approval does not match the displayed recovery plan.",
             false,
         ),
-        PlanError::NotApproved => (
+        RecoveryError::NotApproved => (
             StatusCode::CONFLICT,
             "PLAN_NOT_APPROVED",
             "The recovery plan has not been approved.",
             false,
         ),
-        PlanError::Expired => (
+        RecoveryError::Expired => (
             StatusCode::CONFLICT,
             "PLAN_EXPIRED",
             "The recovery plan has expired.",
             false,
         ),
-        PlanError::Stale => (
+        RecoveryError::StaleGeneration
+        | RecoveryError::ActiveIncidentMismatch
+        | RecoveryError::IncidentNotActive
+        | RecoveryError::StaleActiveRelease
+        | RecoveryError::TargetReleaseMismatch
+        | RecoveryError::TargetServiceMismatch
+        | RecoveryError::TargetIneligible => (
             StatusCode::CONFLICT,
             "PLAN_STALE",
             "The active release no longer matches the approved plan.",
             false,
         ),
-        PlanError::CrossSession => (
-            StatusCode::FORBIDDEN,
-            "PLAN_SESSION_MISMATCH",
-            "The recovery plan does not belong to this session.",
+        RecoveryError::CrossSession => (
+            StatusCode::NOT_FOUND,
+            "PLAN_NOT_FOUND",
+            "The recovery plan was not found in this session.",
             false,
         ),
-        PlanError::AlreadyExecuted => (
+        RecoveryError::AlreadyExecuted => (
             StatusCode::CONFLICT,
             "PLAN_ALREADY_EXECUTED",
             "The recovery plan has already executed.",
             false,
         ),
-        PlanError::InvalidTransition => (
+        RecoveryError::Invalidated => (
+            StatusCode::CONFLICT,
+            "PLAN_INVALIDATED",
+            "The recovery plan is no longer valid.",
+            false,
+        ),
+        RecoveryError::ApprovedFingerprintMismatch | RecoveryError::StoredFingerprintMismatch => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "RECOVERY_INTEGRITY_ERROR",
+            "Stored recovery authority failed its integrity check.",
+            true,
+        ),
+        RecoveryError::InvalidTransition | RecoveryError::NotExecuted => (
             StatusCode::CONFLICT,
             "INVALID_PLAN_TRANSITION",
             "The recovery plan cannot perform this transition.",

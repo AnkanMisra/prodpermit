@@ -27,6 +27,7 @@ export interface ModelContextPort {
 type Registration = {
   classification: ToolClassification;
   controller: AbortController;
+  definitionFingerprint: string;
   promise: Promise<void>;
 };
 
@@ -50,18 +51,28 @@ export class WebMcpRegistry {
 
   async register(
     tool: WebMCP.ModelContextTool,
-    classification: ToolClassification
+    classification: ToolClassification,
+    definitionFingerprint = toolDefinitionFingerprint(tool, classification)
   ): Promise<void> {
     const existing = this.#registrations.get(tool.name);
-    if (existing) {
+    if (existing?.definitionFingerprint === definitionFingerprint) {
       await existing.promise;
       return;
+    }
+    if (existing) {
+      existing.controller.abort();
+      this.#registrations.delete(tool.name);
     }
 
     const controller = new AbortController();
     const wrapped = this.#withActivity(tool);
     const promise = this.#modelContext.registerTool(wrapped, { signal: controller.signal });
-    this.#registrations.set(tool.name, { classification, controller, promise });
+    this.#registrations.set(tool.name, {
+      classification,
+      controller,
+      definitionFingerprint,
+      promise
+    });
     try {
       await promise;
       this.#emitToolsChanged();
@@ -146,4 +157,18 @@ export class WebMcpRegistry {
   #emitToolsChanged(): void {
     this.#onToolsChanged?.(this.tools());
   }
+}
+
+function toolDefinitionFingerprint(
+  tool: WebMCP.ModelContextTool,
+  classification: ToolClassification
+): string {
+  return JSON.stringify({
+    name: tool.name,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: tool.inputSchema,
+    annotations: tool.annotations,
+    classification
+  });
 }

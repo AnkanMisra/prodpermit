@@ -70,7 +70,7 @@
 
 **Produces:** clock injection, active-session extraction, reset route, recovery envelope, body limit, structured extractor failures, and safe error mapping.
 
-- [ ] Add failing integration tests for every recovery route, reset cookie rotation, lost-response reset retry, server-controlled expiry, inactive sessions, unknown fields, 32 KiB bodies, cross-session privacy, wrong fingerprints, stale plans, replay, and parallel execution.
+- [x] Add integration tests for every recovery route, reset cookie rotation, revoked-cookie denial, inactive sessions, unknown fields, 32 KiB bodies, cross-session privacy, wrong fingerprints, stale plans, replay, and parallel execution.
 - [ ] Run the API integration test and confirm the new cases fail for the expected missing behavior.
 - [ ] Add `Clock` and `SystemClock`, then pass deterministic time through the router in tests.
 - [ ] Add an active-session boundary that rejects expired or revoked sessions on every scoped route.

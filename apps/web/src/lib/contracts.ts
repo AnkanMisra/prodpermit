@@ -129,17 +129,72 @@ export const recoveryPlanSchema = z.object({
     "executed",
     "rejected",
     "expired",
-    "failed"
+    "invalidated"
   ])
+});
+
+export const currentRecoverySchema = z.object({
+  plan: recoveryPlanSchema.nullable(),
+  executionCapability: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("available"),
+      planId: recoveryPlanSchema.shape.planId,
+      fingerprint: z.string().length(64),
+      expiresAt: timestampSchema
+    }),
+    z.object({
+      kind: z.literal("absent"),
+      reason: z.enum(["no_plan", "not_approved", "terminal", "expired", "invalidated"])
+    })
+  ])
+});
+
+const recoveryTelemetryEvidenceSchema = z.object({
+  planId: recoveryPlanSchema.shape.planId,
+  serviceId: z.string().min(1),
+  releaseId: releaseIdSchema,
+  scenarioGeneration: z.number().int().positive(),
+  recordedAt: timestampSchema,
+  errorRatePercent: z.number().nonnegative(),
+  p95LatencyMs: z.number().int().nonnegative(),
+  requestRateRps: z.number().int().nonnegative()
+});
+
+const recoveryDiagnosticEvidenceSchema = z.object({
+  planId: recoveryPlanSchema.shape.planId,
+  id: z.string().min(1),
+  serviceId: z.string().min(1),
+  releaseId: releaseIdSchema,
+  scenarioGeneration: z.number().int().positive(),
+  kind: z.literal("database_connectivity"),
+  status: z.enum(["passed", "failed"]),
+  code: z.string(),
+  summary: z.string(),
+  evidence: z.string(),
+  checkedAt: timestampSchema
 });
 
 export const recoveryVerificationSchema = z.object({
   planId: z.string().uuid().brand<"PlanId">(),
-  outcome: z.literal("recovered"),
+  outcome: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("passed") }),
+    z.object({ kind: z.literal("mismatch"), mismatches: z.array(z.string()) })
+  ]),
   previousRelease: releaseIdSchema,
   currentRelease: releaseIdSchema,
   healthStatus: z.enum(["healthy", "critical"]),
   diagnosticStatus: z.enum(["passed", "failed"]),
+  before: z.object({
+    release: releaseIdSchema,
+    evidence: z.array(z.unknown())
+  }),
+  after: z.object({
+    release: releaseIdSchema,
+    healthStatus: z.enum(["healthy", "critical"]),
+    incidentStatus: z.enum(["active", "resolved"]),
+    telemetry: recoveryTelemetryEvidenceSchema,
+    diagnostic: recoveryDiagnosticEvidenceSchema
+  }),
   verifiedAt: timestampSchema
 });
 
@@ -159,4 +214,5 @@ export type IncidentSnapshot = z.infer<typeof incidentSnapshotSchema>;
 export type LogEvent = z.infer<typeof logEventSchema>;
 export type ReleaseComparison = z.infer<typeof releaseComparisonSchema>;
 export type RecoveryPlan = z.infer<typeof recoveryPlanSchema>;
+export type CurrentRecovery = z.infer<typeof currentRecoverySchema>;
 export type RecoveryVerification = z.infer<typeof recoveryVerificationSchema>;

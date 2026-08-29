@@ -8,9 +8,9 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 | 1. Initialize and specify | completed | Workspaces and decision-complete documents exist and pass structural checks | [Phase 1](phase-reports/01-initialize-and-specify.md) |
 | 2. Walking skeleton | completed | The browser displays the seeded broken incident from Rust | [Phase 2](phase-reports/02-walking-skeleton.md) |
 | 3. Investigation workflow | completed | WebMCP tools identify the root cause without an execution capability | [Phase 3](phase-reports/03-investigation-workflow.md) |
-| 4. Recovery lifecycle | in_progress | Human approval gates one atomic recovery and verification | Pending |
-| 5. Reliability and security | pending | Isolation and abuse tests pass; validated security findings are fixed | Pending |
-| 6. Full verification | pending | Tests, builds, browser checks, and a real WebMCP client pass | Pending |
+| 4. Recovery lifecycle | completed | Human approval gates one atomic recovery and verification | [Phase 4](phase-reports/04-recovery-lifecycle.md) |
+| 5. Reliability and security | completed | Isolation and abuse tests pass; validated security findings are fixed | [Phase 5](phase-reports/05-reliability-and-security.md) |
+| 6. Full verification | in_progress | Tests, builds, browser checks, and a real WebMCP client pass | Pending |
 | 7. Deployment and submission preparation | pending | Live URLs and submission packet are complete | Pending |
 
 ## Phase 1 tasks
@@ -53,10 +53,10 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 
 | Task | Status | Verification |
 |---|---|---|
-| Implement recovery-plan types, fingerprint, and state transitions | in_progress | Required domain invariant tests |
-| Persist plans, evidence, and audit events | pending | Persistence transition tests |
-| Add prepare, current, approve, reject, execute, verify, and audit routes | pending | Complete Axum workflow test |
-| Add plan review and audit UI | pending | Component tests and production build |
-| Register preparation and verification tools | pending | Initial registry test |
-| Dynamically gate the execution tool | pending | Lifecycle and Playwright tests |
-| Write Phase 4 report | pending | Report links to verification evidence |
+| Implement recovery-plan types, fingerprint, and state transitions | completed | Required domain invariant tests |
+| Persist plans, evidence, and audit events | completed | Persistence transition tests |
+| Add prepare, current, approve, reject, execute, verify, and audit routes | completed | Complete Axum workflow test |
+| Add plan review and audit UI | completed | Component tests and production build |
+| Register preparation and verification tools | completed | Initial registry test |
+| Dynamically gate the execution tool | completed | Lifecycle and Playwright tests |
+| Write Phase 4 report | completed | [Phase 4 report](phase-reports/04-recovery-lifecycle.md) |

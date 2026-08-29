@@ -206,6 +206,159 @@ async fn recovery_requires_exact_approval_and_rejects_replay() {
     assert_eq!(audit_payload["data"].as_array().map(Vec::len), Some(4));
 }
 
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn recovery_capability_is_session_bound_and_reset_revokes_old_cookie() {
+    let app = test_app().await;
+    let first_cookie = create_session(&app).await;
+    let diagnostic = mutation_request(
+        &app,
+        &first_cookie,
+        "/api/diagnostics",
+        r#"{"kind":"database_connectivity"}"#,
+    )
+    .await;
+    let diagnostic_payload = response_json(diagnostic).await;
+    let diagnostic_id = diagnostic_payload["data"]["id"]
+        .as_str()
+        .expect("diagnostic id is text");
+    let prepare_body = serde_json::json!({
+        "targetRelease": "release_283",
+        "reason": "Rollback the database authentication regression.",
+        "evidenceRefs": ["log_db_auth_1", diagnostic_id]
+    })
+    .to_string();
+    let prepared =
+        mutation_request(&app, &first_cookie, "/api/recovery-plans", &prepare_body).await;
+    let prepared_payload = response_json(prepared).await;
+    let plan_id = prepared_payload["data"]["planId"]
+        .as_str()
+        .expect("plan id is text");
+    let fingerprint = prepared_payload["data"]["fingerprint"]
+        .as_str()
+        .expect("fingerprint is text");
+    let approval = serde_json::json!({ "fingerprint": fingerprint }).to_string();
+    let approved = mutation_request(
+        &app,
+        &first_cookie,
+        &format!("/api/recovery-plans/{plan_id}/approve"),
+        &approval,
+    )
+    .await;
+    assert_eq!(approved.status(), StatusCode::OK);
+
+    let current = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/recovery-plans/current")
+                .header(header::COOKIE, &first_cookie)
+                .body(Body::empty())
+                .expect("current recovery request builds"),
+        )
+        .await
+        .expect("current recovery request succeeds");
+    let current_payload = response_json(current).await;
+    assert_eq!(
+        current_payload["data"]["executionCapability"]["kind"],
+        "available"
+    );
+    assert_eq!(
+        current_payload["data"]["executionCapability"]["planId"],
+        plan_id
+    );
+
+    let second_cookie = create_session(&app).await;
+    let foreign = mutation_request(
+        &app,
+        &second_cookie,
+        &format!("/api/recovery-plans/{plan_id}/execute"),
+        "{}",
+    )
+    .await;
+    assert_eq!(foreign.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        response_json(foreign).await["error"]["code"],
+        "PLAN_NOT_FOUND"
+    );
+
+    let reset = mutation_request(&app, &first_cookie, "/api/demo/session/reset", "{}").await;
+    assert_eq!(reset.status(), StatusCode::OK);
+    let replacement_cookie = response_cookie(&reset);
+    let reset_payload = response_json(reset).await;
+    assert_eq!(reset_payload["data"]["health"]["status"], "critical");
+    assert_eq!(
+        reset_payload["data"]["health"]["currentRelease"],
+        "release_284"
+    );
+
+    let revoked = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/incidents/current")
+                .header(header::COOKIE, &first_cookie)
+                .body(Body::empty())
+                .expect("revoked incident request builds"),
+        )
+        .await
+        .expect("revoked incident request completes");
+    assert_eq!(revoked.status(), StatusCode::UNAUTHORIZED);
+
+    let revoked_logs = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/logs?limit=25")
+                .header(header::COOKIE, &first_cookie)
+                .body(Body::empty())
+                .expect("revoked log request builds"),
+        )
+        .await
+        .expect("revoked log request completes");
+    assert_eq!(revoked_logs.status(), StatusCode::UNAUTHORIZED);
+
+    let retry = mutation_request(&app, &first_cookie, "/api/demo/session/reset", "{}").await;
+    assert_eq!(retry.status(), StatusCode::UNAUTHORIZED);
+    assert_ne!(response_cookie_value(&retry), Some(replacement_cookie));
+}
+
+#[tokio::test]
+async fn mutation_json_errors_use_the_safe_envelope() {
+    let app = test_app().await;
+    let cookie = create_session(&app).await;
+    let unknown = mutation_request(
+        &app,
+        &cookie,
+        "/api/diagnostics",
+        r#"{"kind":"database_connectivity","extra":true}"#,
+    )
+    .await;
+    assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
+    let unknown_payload = response_json(unknown).await;
+    assert_eq!(unknown_payload["error"]["code"], "INVALID_INPUT");
+    assert!(unknown_payload["error"]["requestId"].is_string());
+
+    let large_reason = "x".repeat(33 * 1024);
+    let oversized = mutation_request(
+        &app,
+        &cookie,
+        "/api/recovery-plans",
+        &serde_json::json!({
+            "targetRelease": "release_283",
+            "reason": large_reason,
+            "evidenceRefs": ["log_db_auth_1", "diagnostic"]
+        })
+        .to_string(),
+    )
+    .await;
+    assert_eq!(oversized.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        response_json(oversized).await["error"]["code"],
+        "PAYLOAD_TOO_LARGE"
+    );
+}
+
 async fn test_app() -> Router {
     let store = Store::connect("sqlite::memory:")
         .await
@@ -254,6 +407,28 @@ async fn response_json(response: Response) -> Value {
         .expect("response body reads")
         .to_bytes();
     serde_json::from_slice(&body).expect("response body is JSON")
+}
+
+fn response_cookie(response: &Response) -> String {
+    response
+        .headers()
+        .get(header::SET_COOKIE)
+        .expect("response sets a cookie")
+        .to_str()
+        .expect("cookie is valid text")
+        .split(';')
+        .next()
+        .expect("cookie contains a value")
+        .to_owned()
+}
+
+fn response_cookie_value(response: &Response) -> Option<String> {
+    response
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .map(str::to_owned)
 }
 
 async fn mutation_request(app: &Router, cookie: &str, uri: &str, body: &str) -> Response {

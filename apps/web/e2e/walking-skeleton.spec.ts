@@ -111,6 +111,41 @@ test("investigates the incident through registered WebMCP tools", async ({ page 
   });
 });
 
+test("keeps the telemetry chart scaled inside its panel", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "checkout-api" })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const html = document.documentElement;
+    const chart = document.querySelector(".telemetry-chart");
+    const panel = document.querySelector(".telemetry-panel");
+    if (!(chart instanceof SVGElement) || !(panel instanceof HTMLElement)) {
+      throw new Error("Telemetry chart or panel is missing.");
+    }
+    const chartBox = chart.getBoundingClientRect();
+    const panelBox = panel.getBoundingClientRect();
+    return {
+      overflowX: html.scrollWidth - html.clientWidth,
+      chartWidth: chartBox.width,
+      chartHeight: chartBox.height,
+      panelWidth: panelBox.width,
+      panelHeight: panelBox.height,
+      widthAttr: chart.getAttribute("width"),
+      heightAttr: chart.getAttribute("height"),
+      preserveAspectRatio: chart.getAttribute("preserveAspectRatio")
+    };
+  });
+
+  expect(metrics.overflowX).toBe(0);
+  expect(metrics.widthAttr).toBe("640");
+  expect(metrics.heightAttr).toBe("220");
+  expect(metrics.preserveAspectRatio).toBe("xMidYMid meet");
+  expect(metrics.chartHeight).toBeLessThanOrEqual(metrics.panelHeight);
+  expect(metrics.chartWidth).toBeLessThanOrEqual(metrics.panelWidth);
+  expect(metrics.chartHeight / metrics.chartWidth).toBeCloseTo(220 / 640, 2);
+});
+
 test("gates one exact recovery behind human approval", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "checkout-api" })).toBeVisible();
@@ -127,10 +162,15 @@ test("gates one exact recovery behind human approval", async ({ page }) => {
     evidenceRefs: ["log_db_auth_1", diagnosticId]
   });
   const prepared = z
-    .object({ ok: z.literal(true), data: z.object({ planId: z.string().uuid() }) })
+    .object({
+      ok: z.literal(true),
+      data: z.object({ planId: z.string().uuid(), fingerprint: z.string().length(64) })
+    })
     .parse(preparedOutput).data;
 
   await expect(page.getByRole("heading", { name: "Recovery plan" })).toBeVisible();
+  await expect(page.getByText(prepared.fingerprint)).toBeVisible();
+  await expect(page.getByText("log_db_auth_1")).toBeVisible();
   await expect(page.getByText("Production changed").locator("..")).toContainText("No");
   expect(await registeredToolNames(page)).not.toContain("execute_approved_recovery");
 
@@ -144,7 +184,40 @@ test("gates one exact recovery behind human approval", async ({ page }) => {
   expect(await registeredToolNames(page)).not.toContain("execute_approved_recovery");
 
   await invokeTool(page, "verify_recovery", { planId: prepared.planId });
-  await expect(page.getByText(/Verified release_283: healthy/)).toBeVisible();
+  await expect(page.getByText("Recovery verified")).toBeVisible();
+  await expect(page.getByText("DB_CONNECTION_OK")).toBeVisible();
+
+  await page.getByRole("button", { name: "Reset scenario" }).click();
+  await expect(page.getByText("Critical", { exact: true })).toBeVisible();
+  await expect(page.getByText("release_284").first()).toBeVisible();
+  await expect(page.getByText(/Ask the agent to prepare the safest recovery/)).toBeVisible();
+  expect(await registeredToolNames(page)).not.toContain("execute_approved_recovery");
+});
+
+test("restores and revokes an approved capability across reload", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "checkout-api" })).toBeVisible();
+  const diagnosticOutput = await invokeTool(page, "run_diagnostic", {
+    kind: "database_connectivity"
+  });
+  const diagnosticId = z
+    .object({ ok: z.literal(true), data: z.object({ id: z.string().uuid() }) })
+    .parse(diagnosticOutput).data.id;
+  await invokeTool(page, "prepare_recovery", {
+    targetRelease: "release_283",
+    reason: "Rollback the database authentication regression.",
+    evidenceRefs: ["log_db_auth_1", diagnosticId]
+  });
+  await page.getByRole("button", { name: "Approve exact plan" }).click();
+  await expect(page.getByText("execute_approved_recovery")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("execute_approved_recovery")).toBeVisible();
+  expect(await registeredToolNames(page)).toContain("execute_approved_recovery");
+
+  await page.getByRole("button", { name: "Revoke approval" }).click();
+  await expect(page.getByText("Execution capability absent", { exact: false })).toBeVisible();
+  expect(await registeredToolNames(page)).not.toContain("execute_approved_recovery");
 });
 
 async function invokeTool(

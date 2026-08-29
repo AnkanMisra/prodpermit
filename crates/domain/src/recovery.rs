@@ -16,6 +16,7 @@ const RECOVERY_POLICY_VERSION: u32 = 1;
 const FINGERPRINT_ENCODING_VERSION: u32 = 1;
 const PLAN_LIFETIME: Duration = Duration::minutes(10);
 const MAX_REASON_BYTES: usize = 240;
+const MAX_EVIDENCE_RECORDS: usize = 8;
 const DATABASE_AUTH_FAILURE_CODE: &str = "DB_AUTH_METHOD_MISMATCH";
 const DATABASE_CONNECTIVITY_KIND: &str = "database_connectivity";
 
@@ -181,10 +182,10 @@ impl RecoveryEvidence {
     }
 }
 
-/// The exact, canonical evidence pair reviewed with a recovery plan.
+/// The exact, canonical evidence records reviewed with a recovery plan.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct RecoveryEvidenceSet([RecoveryEvidence; 2]);
+pub struct RecoveryEvidenceSet(Vec<RecoveryEvidence>);
 
 impl RecoveryEvidenceSet {
     fn try_new(
@@ -194,6 +195,9 @@ impl RecoveryEvidenceSet {
         release_id: &ReleaseId,
         scenario_generation: i64,
     ) -> Result<Self, RecoveryError> {
+        if evidence.len() > MAX_EVIDENCE_RECORDS {
+            return Err(RecoveryError::TooManyEvidence);
+        }
         let mut ids = HashSet::with_capacity(evidence.len());
         for item in &evidence {
             if !item.is_supported() {
@@ -220,10 +224,8 @@ impl RecoveryEvidenceSet {
             RecoveryEvidenceKind::DatabaseAuthenticationFailureLog,
             RecoveryEvidenceKind::FailedDatabaseConnectivityDiagnostic,
         ] {
-            match evidence.iter().filter(|item| item.kind() == kind).count() {
-                0 => return Err(RecoveryError::MissingEvidence(kind)),
-                1 => {}
-                _ => return Err(RecoveryError::AmbiguousEvidence(kind)),
+            if !evidence.iter().any(|item| item.kind() == kind) {
+                return Err(RecoveryError::MissingEvidence(kind));
             }
         }
 
@@ -232,10 +234,7 @@ impl RecoveryEvidenceSet {
                 .cmp(&right.kind())
                 .then_with(|| left.id().cmp(right.id()))
         });
-        match <[RecoveryEvidence; 2]>::try_from(evidence) {
-            Ok(ordered) => Ok(Self(ordered)),
-            Err(_) => unreachable!("one item of each evidence kind is exactly two items"),
-        }
+        Ok(Self(evidence))
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, RecoveryEvidence> {
@@ -399,11 +398,28 @@ pub fn prepare_recovery(
 }
 
 /// A SHA-256 fingerprint over versioned, length-prefixed normalized facts.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct RecoveryFingerprint(String);
 
 impl RecoveryFingerprint {
+    /// Parses a fingerprint read from persistence.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RecoveryError::InvalidFingerprint`] unless `value` is exactly 64 lowercase
+    /// hexadecimal characters.
+    pub fn parse(value: String) -> Result<Self, RecoveryError> {
+        let is_lowercase_sha256 = value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+        if !is_lowercase_sha256 {
+            return Err(RecoveryError::InvalidFingerprint);
+        }
+        Ok(Self(value))
+    }
+
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
@@ -467,6 +483,16 @@ pub enum HumanDecision {
     Reject,
 }
 
+/// The authoritative fact that revoked a nonterminal plan.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecoveryInvalidationReason {
+    SessionReset,
+    ScenarioGenerationChanged,
+    ActiveReleaseChanged,
+    TargetBecameIneligible,
+}
+
 /// Valid recovery lifecycle states without contradictory optional fields.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
@@ -492,6 +518,7 @@ pub enum RecoveryPlanState {
     },
     Expired,
     Invalidated {
+        reason: RecoveryInvalidationReason,
         invalidated_at: DateTime<Utc>,
     },
 }
@@ -577,12 +604,16 @@ pub fn apply_human_decision(
 #[must_use]
 pub fn invalidate_recovery(
     state: RecoveryPlanState,
+    reason: RecoveryInvalidationReason,
     invalidated_at: DateTime<Utc>,
 ) -> RecoveryPlanState {
     match state {
         RecoveryPlanState::Prepared
         | RecoveryPlanState::Approved { .. }
-        | RecoveryPlanState::Executing { .. } => RecoveryPlanState::Invalidated { invalidated_at },
+        | RecoveryPlanState::Executing { .. } => RecoveryPlanState::Invalidated {
+            reason,
+            invalidated_at,
+        },
         terminal => terminal,
     }
 }
@@ -592,6 +623,8 @@ pub fn invalidate_recovery(
 pub struct RecoveryExecutionFacts {
     pub session_id: SessionId,
     pub scenario_generation: i64,
+    pub active_incident_id: IncidentId,
+    pub active_incident_status: IncidentStatus,
     pub active_release: ReleaseId,
     pub target_release: ReleaseId,
     pub target_service_id: ServiceId,
@@ -630,6 +663,12 @@ pub fn validate_execution(
     }
     if facts.scenario_generation != spec.scenario_generation {
         return Err(RecoveryError::StaleGeneration);
+    }
+    if facts.active_incident_id != spec.incident_id {
+        return Err(RecoveryError::ActiveIncidentMismatch);
+    }
+    if facts.active_incident_status != IncidentStatus::Active {
+        return Err(RecoveryError::IncidentNotActive);
     }
     if facts.active_release != spec.expected_current_release {
         return Err(RecoveryError::StaleActiveRelease);
@@ -682,8 +721,39 @@ pub fn complete_execution(
     }
 }
 
+/// Linked telemetry persisted by the exact recovery execution.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryTelemetryEvidence {
+    pub plan_id: PlanId,
+    pub service_id: ServiceId,
+    pub release_id: ReleaseId,
+    pub scenario_generation: i64,
+    pub recorded_at: DateTime<Utc>,
+    pub error_rate_percent: f64,
+    pub p95_latency_ms: i64,
+    pub request_rate_rps: i64,
+}
+
+/// Linked diagnostic persisted by the exact recovery execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryDiagnosticEvidence {
+    pub plan_id: PlanId,
+    pub id: EvidenceId,
+    pub service_id: ServiceId,
+    pub release_id: ReleaseId,
+    pub scenario_generation: i64,
+    pub kind: String,
+    pub status: DiagnosticStatus,
+    pub code: String,
+    pub summary: String,
+    pub evidence: String,
+    pub checked_at: DateTime<Utc>,
+}
+
 /// Persisted execution and after-state facts used to derive verification.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RecoveryVerificationFacts {
     pub execution_plan_id: PlanId,
     pub scenario_generation: i64,
@@ -693,12 +763,8 @@ pub struct RecoveryVerificationFacts {
     pub health_status: HealthStatus,
     pub incident_id: IncidentId,
     pub incident_status: IncidentStatus,
-    pub telemetry_release: ReleaseId,
-    pub telemetry_generation: i64,
-    pub diagnostic_service_id: ServiceId,
-    pub diagnostic_release: ReleaseId,
-    pub diagnostic_generation: i64,
-    pub diagnostic_status: DiagnosticStatus,
+    pub telemetry: RecoveryTelemetryEvidence,
+    pub diagnostic: RecoveryDiagnosticEvidence,
     pub stored_fingerprint: String,
 }
 
@@ -714,12 +780,17 @@ pub enum RecoveryVerificationMismatch {
     Health,
     Incident,
     IncidentStatus,
+    TelemetryPlan,
+    TelemetryService,
     TelemetryRelease,
     TelemetryGeneration,
+    DiagnosticPlan,
     DiagnosticService,
     DiagnosticRelease,
     DiagnosticGeneration,
+    DiagnosticKind,
     DiagnosticStatus,
+    DiagnosticCode,
     Fingerprint,
 }
 
@@ -742,17 +813,18 @@ pub struct RecoveryVerificationBefore {
 }
 
 /// The persisted after-state returned by verification.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryVerificationAfter {
     pub release: ReleaseId,
     pub health_status: HealthStatus,
     pub incident_status: IncidentStatus,
-    pub diagnostic_status: DiagnosticStatus,
+    pub telemetry: RecoveryTelemetryEvidence,
+    pub diagnostic: RecoveryDiagnosticEvidence,
 }
 
 /// Verification derived solely from the normalized plan and persisted effects.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryVerification {
     pub plan_id: PlanId,
@@ -797,7 +869,8 @@ pub fn derive_verification(
             release: facts.current_release,
             health_status: facts.health_status,
             incident_status: facts.incident_status,
-            diagnostic_status: facts.diagnostic_status,
+            telemetry: facts.telemetry,
+            diagnostic: facts.diagnostic,
         },
         verified_at,
     })
@@ -849,36 +922,8 @@ fn verification_mismatches(
         facts.incident_status != IncidentStatus::Resolved,
         RecoveryVerificationMismatch::IncidentStatus,
     );
-    push_mismatch(
-        &mut mismatches,
-        facts.telemetry_release != spec.target_release,
-        RecoveryVerificationMismatch::TelemetryRelease,
-    );
-    push_mismatch(
-        &mut mismatches,
-        facts.telemetry_generation != spec.scenario_generation,
-        RecoveryVerificationMismatch::TelemetryGeneration,
-    );
-    push_mismatch(
-        &mut mismatches,
-        facts.diagnostic_service_id != spec.service_id,
-        RecoveryVerificationMismatch::DiagnosticService,
-    );
-    push_mismatch(
-        &mut mismatches,
-        facts.diagnostic_release != spec.target_release,
-        RecoveryVerificationMismatch::DiagnosticRelease,
-    );
-    push_mismatch(
-        &mut mismatches,
-        facts.diagnostic_generation != spec.scenario_generation,
-        RecoveryVerificationMismatch::DiagnosticGeneration,
-    );
-    push_mismatch(
-        &mut mismatches,
-        facts.diagnostic_status != DiagnosticStatus::Passed,
-        RecoveryVerificationMismatch::DiagnosticStatus,
-    );
+    push_telemetry_mismatches(&mut mismatches, spec, &facts.telemetry);
+    push_diagnostic_mismatches(&mut mismatches, spec, &facts.diagnostic);
     let canonical = canonical_recovery_fingerprint(spec);
     push_mismatch(
         &mut mismatches,
@@ -886,6 +931,75 @@ fn verification_mismatches(
         RecoveryVerificationMismatch::Fingerprint,
     );
     mismatches
+}
+
+fn push_telemetry_mismatches(
+    mismatches: &mut Vec<RecoveryVerificationMismatch>,
+    spec: &RecoveryPlanSpec,
+    telemetry: &RecoveryTelemetryEvidence,
+) {
+    push_mismatch(
+        mismatches,
+        telemetry.plan_id != spec.plan_id,
+        RecoveryVerificationMismatch::TelemetryPlan,
+    );
+    push_mismatch(
+        mismatches,
+        telemetry.service_id != spec.service_id,
+        RecoveryVerificationMismatch::TelemetryService,
+    );
+    push_mismatch(
+        mismatches,
+        telemetry.release_id != spec.target_release,
+        RecoveryVerificationMismatch::TelemetryRelease,
+    );
+    push_mismatch(
+        mismatches,
+        telemetry.scenario_generation != spec.scenario_generation,
+        RecoveryVerificationMismatch::TelemetryGeneration,
+    );
+}
+
+fn push_diagnostic_mismatches(
+    mismatches: &mut Vec<RecoveryVerificationMismatch>,
+    spec: &RecoveryPlanSpec,
+    diagnostic: &RecoveryDiagnosticEvidence,
+) {
+    push_mismatch(
+        mismatches,
+        diagnostic.plan_id != spec.plan_id,
+        RecoveryVerificationMismatch::DiagnosticPlan,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.service_id != spec.service_id,
+        RecoveryVerificationMismatch::DiagnosticService,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.release_id != spec.target_release,
+        RecoveryVerificationMismatch::DiagnosticRelease,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.scenario_generation != spec.scenario_generation,
+        RecoveryVerificationMismatch::DiagnosticGeneration,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.kind != DATABASE_CONNECTIVITY_KIND,
+        RecoveryVerificationMismatch::DiagnosticKind,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.status != DiagnosticStatus::Passed,
+        RecoveryVerificationMismatch::DiagnosticStatus,
+    );
+    push_mismatch(
+        mismatches,
+        diagnostic.code != "DB_CONNECTION_OK",
+        RecoveryVerificationMismatch::DiagnosticCode,
+    );
 }
 
 fn push_mismatch(
@@ -917,8 +1031,8 @@ pub enum RecoveryError {
     DuplicateEvidence(EvidenceId),
     #[error("required evidence kind {0:?} is missing")]
     MissingEvidence(RecoveryEvidenceKind),
-    #[error("evidence kind {0:?} is ambiguous")]
-    AmbiguousEvidence(RecoveryEvidenceKind),
+    #[error("a recovery plan accepts at most eight evidence records")]
+    TooManyEvidence,
     #[error("evidence {0:?} belongs to another session")]
     EvidenceSessionMismatch(EvidenceId),
     #[error("evidence {0:?} belongs to another service")]
@@ -929,6 +1043,8 @@ pub enum RecoveryError {
     EvidenceGenerationMismatch(EvidenceId),
     #[error("plan fingerprint does not match")]
     FingerprintMismatch,
+    #[error("fingerprint must be 64 lowercase hexadecimal characters")]
+    InvalidFingerprint,
     #[error("plan transition is not allowed")]
     InvalidTransition,
     #[error("plan is not approved")]
@@ -939,6 +1055,10 @@ pub enum RecoveryError {
     CrossSession,
     #[error("scenario generation is stale")]
     StaleGeneration,
+    #[error("active incident no longer matches the plan")]
+    ActiveIncidentMismatch,
+    #[error("the plan incident is no longer active")]
+    IncidentNotActive,
     #[error("active release no longer matches the plan")]
     StaleActiveRelease,
     #[error("target release no longer matches the plan")]

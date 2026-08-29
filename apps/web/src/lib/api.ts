@@ -1,6 +1,7 @@
 import {
   apiErrorResponseSchema,
   auditEventSchema,
+  currentRecoverySchema,
   diagnosticResultSchema,
   incidentDataResponseSchema,
   incidentSnapshotSchema,
@@ -13,6 +14,7 @@ import {
   type IncidentSnapshot,
   type LogEvent,
   type RecoveryPlan,
+  type CurrentRecovery,
   type RecoveryVerification,
   type ReleaseComparison
 } from "@/lib/contracts";
@@ -128,8 +130,16 @@ export async function prepareRecovery(
   });
 }
 
-export async function fetchCurrentPlan(signal?: AbortSignal): Promise<RecoveryPlan | null> {
-  return requestData("/api/backend/recovery-plans/current", recoveryPlanSchema.nullable(), {
+export async function fetchCurrentRecovery(signal?: AbortSignal): Promise<CurrentRecovery> {
+  return requestData("/api/backend/recovery-plans/current", currentRecoverySchema, {
+    signal
+  });
+}
+
+export async function resetSession(signal?: AbortSignal): Promise<IncidentSnapshot> {
+  return requestData("/api/backend/demo/session/reset", incidentSnapshotSchema, {
+    method: "POST",
+    headers: mutationHeaders(),
     signal
   });
 }
