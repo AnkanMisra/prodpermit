@@ -602,6 +602,18 @@ async fn reset_revokes_old_authority_without_reissuing_the_replacement() {
     .expect("old plan state loads");
     assert_eq!(status, "invalidated");
     assert_eq!(reason.as_deref(), Some("session_reset"));
+
+    let fresh = seeded_scenario(SessionId::new(), now + Duration::minutes(3));
+    store
+        .create_session(&fresh)
+        .await
+        .expect("creating a session prunes the complete revoked scenario");
+    let old_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM demo_sessions WHERE id = ?")
+        .bind(old_session.as_uuid().to_string())
+        .fetch_one(&mut connection)
+        .await
+        .expect("old session count loads");
+    assert_eq!(old_rows, 0);
 }
 
 async fn prepare_valid_recovery(

@@ -49,6 +49,7 @@ export function IncidentDashboard({
   recovery?: RecoveryView;
 }) {
   const points = chartPoints(snapshot);
+  const resolved = snapshot.incident.status === "resolved";
   const statusLabel = snapshot.health.status === "critical" ? "Critical" : "Healthy";
 
   return (
@@ -60,10 +61,14 @@ export function IncidentDashboard({
       >
         <div>
           <p className="eyebrow">
-            {snapshot.incident.status === "resolved" ? "Resolved incident" : "Active incident"}
+            {resolved ? "Resolved incident" : "Active incident"}
           </p>
           <h1 id="incident-title">{snapshot.incident.serviceId}</h1>
-          <p className="incident-summary">{snapshot.incident.summary}</p>
+          <p className="incident-summary">
+            {resolved
+              ? "The approved rollback restored database connectivity and resolved elevated HTTP 500 responses."
+              : snapshot.incident.summary}
+          </p>
         </div>
         <div className={`status-pill status-${snapshot.health.status}`} role="status">
           <span aria-hidden="true" className="status-dot" />
@@ -91,7 +96,9 @@ export function IncidentDashboard({
               <p className="eyebrow">Last 30 minutes</p>
               <h2 id="telemetry-title">Checkout error rate</h2>
             </div>
-            <span className="trend-label">Sharp increase after deploy</span>
+            <span className="trend-label">
+              {resolved ? "Recovered after rollback" : "Sharp increase after deploy"}
+            </span>
           </div>
           <svg
             className="telemetry-chart"
@@ -108,8 +115,9 @@ export function IncidentDashboard({
             <polyline points={points} className="chart-line" />
           </svg>
           <p className="chart-caption">
-            Error rate rose from 0.3% to {snapshot.health.errorRatePercent.toFixed(1)}%
-            shortly after `release_284`.
+            {resolved
+              ? `Recovery reduced the error rate to ${snapshot.health.errorRatePercent.toFixed(1)}% after rollback to ${snapshot.health.currentRelease}.`
+              : `Error rate rose from 0.3% to ${snapshot.health.errorRatePercent.toFixed(1)}% shortly after release_284.`}
           </p>
         </section>
 

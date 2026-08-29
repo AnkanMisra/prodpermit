@@ -140,7 +140,7 @@ impl IntoResponse for ApiError {
                 true,
             ),
             Self::Store(error) => {
-                tracing::error!(error = %error, "persistence request failed");
+                tracing::error!(error = ?error, "persistence request failed");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "INTERNAL_ERROR",

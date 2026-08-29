@@ -15,6 +15,24 @@ impl Store {
     /// Returns [`StoreError`] when any insert or the transaction commit fails.
     pub async fn create_session(&self, snapshot: &IncidentSnapshot) -> Result<(), StoreError> {
         let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "DELETE FROM recovery_plan_executions WHERE session_id IN (SELECT id FROM demo_sessions WHERE revoked_at IS NOT NULL OR expires_at <= ?)",
+        )
+        .bind(snapshot.session.created_at)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "DELETE FROM diagnostic_contexts WHERE session_id IN (SELECT id FROM demo_sessions WHERE revoked_at IS NOT NULL OR expires_at <= ?)",
+        )
+        .bind(snapshot.session.created_at)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "DELETE FROM recovery_plans WHERE session_id IN (SELECT id FROM demo_sessions WHERE revoked_at IS NOT NULL OR expires_at <= ?)",
+        )
+        .bind(snapshot.session.created_at)
+        .execute(&mut *tx)
+        .await?;
         sqlx::query("DELETE FROM demo_sessions WHERE revoked_at IS NOT NULL OR expires_at <= ?")
             .bind(snapshot.session.created_at)
             .execute(&mut *tx)

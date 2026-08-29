@@ -9,8 +9,8 @@ CREATE TABLE session_resets (
     original_session_id TEXT PRIMARY KEY NOT NULL,
     replacement_session_id TEXT UNIQUE NOT NULL,
     reset_at TEXT NOT NULL,
-    FOREIGN KEY (original_session_id) REFERENCES demo_sessions(id) ON DELETE CASCADE,
-    FOREIGN KEY (replacement_session_id) REFERENCES demo_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (original_session_id) REFERENCES demo_sessions(id),
+    FOREIGN KEY (replacement_session_id) REFERENCES demo_sessions(id),
     CHECK (original_session_id <> replacement_session_id)
 );
 
@@ -196,6 +196,12 @@ CREATE TABLE recovery_plan_evidence (
 
 CREATE TRIGGER recovery_plan_evidence_immutable_update
 BEFORE UPDATE ON recovery_plan_evidence
+BEGIN
+    SELECT RAISE(ABORT, 'recovery plan evidence is immutable');
+END;
+
+CREATE TRIGGER recovery_plan_evidence_immutable_delete
+BEFORE DELETE ON recovery_plan_evidence
 BEGIN
     SELECT RAISE(ABORT, 'recovery plan evidence is immutable');
 END;

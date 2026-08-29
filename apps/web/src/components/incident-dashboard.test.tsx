@@ -214,6 +214,8 @@ describe("IncidentDashboard", () => {
     );
 
     expect(screen.getByText("Resolved incident")).toBeInTheDocument();
+    expect(screen.getByText("Recovered after rollback")).toBeInTheDocument();
+    expect(screen.getByText(/Recovery reduced the error rate to 0.2%/)).toBeInTheDocument();
     expect(screen.getByText(fingerprint)).toBeInTheDocument();
     expect(screen.getByText("log_db_auth_1")).toBeInTheDocument();
     expect(screen.getByText("Recovery verified")).toBeInTheDocument();

@@ -186,6 +186,12 @@ test("gates one exact recovery behind human approval", async ({ page }) => {
   await invokeTool(page, "verify_recovery", { planId: prepared.planId });
   await expect(page.getByText("Recovery verified")).toBeVisible();
   await expect(page.getByText("DB_CONNECTION_OK")).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 2200 });
+  await page.screenshot({
+    path: "../../output/playwright/phase-4-recovery.png",
+    fullPage: true,
+    animations: "disabled"
+  });
 
   await page.getByRole("button", { name: "Reset scenario" }).click();
   await expect(page.getByText("Critical", { exact: true })).toBeVisible();
