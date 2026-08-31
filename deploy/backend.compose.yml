@@ -1,0 +1,43 @@
+name: recovery-control-room-backend
+
+services:
+  api:
+    image: recovery-control-room-api:local
+    build:
+      context: ..
+      dockerfile: crates/api/Dockerfile
+    init: true
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:?Set ALLOWED_ORIGIN in .env.backend}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///data/recovery-control-room.db?mode=rwc}
+      PORT: ${PORT:-8080}
+      RUST_LOG: ${RUST_LOG:-info}
+      SECURE_COOKIE: ${SECURE_COOKIE:-true}
+    ports:
+      - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+    volumes:
+      - recovery-api-data:/data
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:${PORT:-8080}/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  recovery-api-data:
+    name: recovery-control-room-api-data

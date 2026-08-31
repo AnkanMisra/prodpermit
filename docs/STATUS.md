@@ -4,7 +4,7 @@
 
 Phase 7: deployment and submission preparation.
 
-Status: `pending`
+Status: `in_progress`
 
 ## Verified state
 
@@ -36,22 +36,21 @@ Status: `pending`
 
 ## Current work
 
-- Keep Phase 7 pending until the participant authorizes deployment and submission preparation.
-- Preserve the verified local state while the participant performs their own acceptance testing.
+- Deploy the Rust API and SQLite volume on Ankan-Linux.
+- Publish the API through `https://ankan-linux.tailf04855.ts.net` with Tailscale Funnel.
+- Deploy Recovery Control Room to Vercel Hobby from `main` and verify the public workflow.
+- Prepare the submission packet without submitting it.
 
 ## Blockers
 
-No engineering blocker is active.
-
-Local phase commits are pending because Git has no configured author name or email. Work can continue, but no agent may invent or modify the user's Git identity.
+No engineering blocker is active. Git checkpoints are configured and pushed to `origin/main`.
 
 The following later actions require human input:
 
 - Acknowledge the official Devpost rules.
 - Authorize hosting credentials and paid resources.
-- Choose the public product name.
 - Approve the final Devpost submission.
 
 ## Next task
 
-Do not start Phase 7 without participant authorization. Deployment, public naming, hosting credentials, and submission remain human-controlled.
+Deploy the loopback-only backend, enable Tailscale Funnel, and create the Vercel production project for Recovery Control Room.

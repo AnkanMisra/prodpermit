@@ -11,7 +11,7 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 | 4. Recovery lifecycle | completed | Human approval gates one atomic recovery and verification | [Phase 4](phase-reports/04-recovery-lifecycle.md) |
 | 5. Reliability and security | completed | Isolation and abuse tests pass; validated security findings are fixed | [Phase 5](phase-reports/05-reliability-and-security.md) |
 | 6. Full verification | completed | Tests, builds, browser checks, and a real WebMCP client pass | [Phase 6](phase-reports/06-full-verification.md) |
-| 7. Deployment and submission preparation | pending | Live URLs and submission packet are complete | Pending |
+| 7. Deployment and submission preparation | in_progress | Live URLs and submission packet are complete | Pending |
 
 ## Phase 1 tasks
 
