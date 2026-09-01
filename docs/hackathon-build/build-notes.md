@@ -18,4 +18,6 @@ Phase 6 completed the full local release gate. Rust, Bun, Next.js, Playwright, D
 
 ## 2026-09-01
 
-Phase 7 deployed the Rust API with persistent SQLite on Ankan-Linux, published it through Tailscale Funnel, and deployed the Next.js frontend to Vercel. Five Chromium journeys passed against the public application. The repository is public with an MIT license. Devpost drafting and submission remain blocked on the participant's official rules acknowledgment, video, and final confirmation.
+Phase 7 deployed the Rust API with persistent SQLite on Ankan-Linux, published it through Tailscale Funnel, and deployed the Next.js frontend to Vercel. Five Chromium journeys passed against the public application. The repository is public with an MIT license.
+
+The participant acknowledged the official rules. The local Devpost draft now maps the verified project evidence to the live form fields and judging criteria. Participant-specific selections and the public video URL remain open.

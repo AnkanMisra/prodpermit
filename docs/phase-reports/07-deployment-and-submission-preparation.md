@@ -4,7 +4,7 @@ Status: `in_progress`
 
 ## Outcome
 
-The application, backend, and repository are public. The production recovery workflow passes all five Chromium journeys. Submission drafting remains blocked until the participant acknowledges the official Devpost rules.
+The application, backend, and repository are public. The production recovery workflow passes all five Chromium journeys. The participant acknowledged the official rules, and `devpost-submission.md` now contains the verified project story, official form fields, testing instructions, screenshot list, and video outline.
 
 ## Live services
 
@@ -36,14 +36,13 @@ The following checks passed on September 1, 2026:
 - Production deployment ID: `dpl_CZGvpE1VWfk8mWyMgJXzLD97aH69`
 - Production runtime: Node.js 24.x
 
-The connected Vercel integration created the first production deployment. The project still needs a Git connection before pushes to `main` can deploy automatically.
+The connected Vercel integration created the first production deployment. GitHub now connects to the same project with `apps/web` as its root directory, Bun frozen installs, Node.js 24.x, and `BACKEND_URL` in the Production and Preview environments.
 
 ## Remaining gates
 
-1. The participant reviews the official terms and replies `yes`.
-2. Codex prepares `devpost-submission.md` from the verified project and official form fields.
-3. The participant publishes a narrated YouTube video under three minutes.
-4. Codex runs the final readiness check.
-5. The participant explicitly confirms the Devpost submission.
+1. The participant confirms the submitter type, country, learning level, and career AI value.
+2. The participant publishes a narrated YouTube video under three minutes.
+3. Codex adds the video URL and runs the final readiness check.
+4. The participant explicitly confirms the Devpost submission.
 
 Nothing has been sent to Devpost.

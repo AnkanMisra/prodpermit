@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .next/
+.vercel/
 coverage/
 node_modules/
 playwright-report/

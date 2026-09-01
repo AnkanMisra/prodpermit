@@ -135,7 +135,7 @@ Record `git rev-parse HEAD` before updating. If the backend smoke test fails, ch
 
 Vercel can instantly move the production alias back to a previously verified deployment from the dashboard.
 
-The first production deployment used the connected Vercel integration. Connect the Vercel project to `AnkanMisra/webmcp-project` before relying on automatic deployments from `main`.
+The first production deployment used the connected Vercel integration. The project now connects to `AnkanMisra/webmcp-project` with `apps/web` as its root directory. Verified pushes to `main` trigger production deployments.
 
 ## Stop public access
 

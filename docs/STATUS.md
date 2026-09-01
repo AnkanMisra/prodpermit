@@ -14,7 +14,7 @@ Status: `in_progress`
 - The participant is registered for The WebMCP Challenge.
 - The submission deadline is September 3, 2026 at 1:00 p.m. Pacific Time.
 - The current browser API is `document.modelContext`.
-- Devpost rules acknowledgment remains pending because only the participant can accept the terms.
+- The participant acknowledged the official Devpost rules.
 - The Rust API is healthy in Docker with SQLite stored in the `recovery-control-room-api-data` volume.
 - Tailscale Funnel publishes the API at `https://ankan-linux.tailf04855.ts.net`.
 - Vercel serves the frontend at `https://recovery-control-room.vercel.app`.
@@ -41,9 +41,8 @@ Status: `in_progress`
 
 ## Current work
 
-- Connect the Vercel project to `main` for automatic deployments.
-- Complete the participant-only Devpost rules acknowledgment.
-- Prepare the Devpost draft after the rules gate opens.
+- Confirm the participant-specific Devpost form selections in `devpost-submission.md`.
+- Finalize the Devpost draft after the video URL is available.
 - Record and publish the public narrated demo video.
 - Run the final submission check without submitting until the participant confirms.
 
@@ -53,11 +52,10 @@ No engineering blocker is active. Git checkpoints are configured and pushed to `
 
 The following actions require human input:
 
-- Acknowledge the official Devpost rules.
-- Authorize the Vercel Git connection.
+- Confirm submitter type, country, learning level, and career AI value.
 - Record or approve the public narrated demo video.
 - Approve the final Devpost submission.
 
 ## Next task
 
-Review and acknowledge the official Devpost rules. Then prepare the draft and demo packet.
+Confirm the remaining form selections and publish the narrated demo video. Then rerun submission preparation.

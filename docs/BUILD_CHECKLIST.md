@@ -22,9 +22,9 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 | Deploy the Next.js frontend to Vercel | completed | Production deployment is ready at the stable alias |
 | Verify the production recovery workflow | completed | Five Chromium journeys pass against the public URL |
 | Publish the repository and license | completed | GitHub reports public visibility and detects MIT |
-| Connect Vercel automatic deployments to `main` | blocked | Vercel CLI or dashboard authorization is required |
-| Acknowledge the official Devpost rules | blocked | Participant must reply `yes` after reviewing the official terms |
-| Prepare the Devpost draft and demo packet | blocked | Rules acknowledgment must complete first |
+| Connect Vercel automatic deployments to `main` | completed | GitHub is connected with `apps/web` as the Vercel root directory |
+| Acknowledge the official Devpost rules | completed | Participant replied `yes` after the official review |
+| Prepare the Devpost draft and demo packet | in_progress | `devpost-submission.md` contains the verified story, links, testing steps, screenshots, and video outline |
 | Publish the narrated demo video | blocked | Participant must record or approve the final video |
 | Submit and verify the Devpost entry | blocked | Participant must explicitly approve the final submission |
 
