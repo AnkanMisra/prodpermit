@@ -18,6 +18,7 @@ Status: `in_progress`
 - The Rust API is healthy in Docker with SQLite stored in the `recovery-control-room-api-data` volume.
 - Tailscale Funnel publishes the API at `https://ankan-linux.tailf04855.ts.net`.
 - Vercel serves the frontend at `https://recovery-control-room.vercel.app`.
+- The Vercel rewrite and the public Funnel edge both return `200` after the Funnel relay refresh.
 - All five Chromium journeys pass against the production frontend and public backend.
 - `AnkanMisra/webmcp-project` is public and GitHub detects its MIT license.
 
@@ -39,6 +40,7 @@ Status: `in_progress`
 - Chrome for Testing 151 with native WebMCP flags discovered all six initial tools, invoked the real callbacks, exposed execution only after the human approval click, executed the rollback, removed execution, and verified `release_283` as healthy.
 - ChatGPT's in-app browser completed the same public workflow with plan `743b1fee-7ab4-4144-b06c-88382f99ddcf` and reported healthy `release_283`, a resolved incident, `DB_CONNECTION_OK`, and passed recovery verification.
 - Visual inspection of `output/playwright/phase-4-recovery.png` confirmed readable fingerprint, evidence, resolved state, recovery verification, and audit history without clipping.
+- The deployment runbook now distinguishes private MagicDNS health from the public Funnel edge and includes the relay refresh procedure.
 
 ## Current work
 

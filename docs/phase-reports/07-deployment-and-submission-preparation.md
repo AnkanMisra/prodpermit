@@ -28,6 +28,7 @@ The following checks passed on September 1, 2026:
 - Restarting the API container preserved the SQLite file at the same volume inode and size.
 - The container returned to the `healthy` state after restart.
 - GitHub's unauthenticated API reported public repository visibility and the MIT license.
+- A later diagnostic invocation exposed a stalled public Funnel relay while the container remained healthy. Reapplying the Funnel configuration restored both the public edge and Vercel rewrite to `200`.
 
 ## Deployment record
 
@@ -37,7 +38,7 @@ The following checks passed on September 1, 2026:
 - Production deployment ID: `dpl_CZGvpE1VWfk8mWyMgJXzLD97aH69`
 - Production runtime: Node.js 24.x
 
-The connected Vercel integration created the first production deployment. GitHub now connects to the same project with `apps/web` as its root directory, Bun frozen installs, Node.js 24.x, and `BACKEND_URL` in the Production and Preview environments.
+The connected Vercel integration created the first production deployment. GitHub now connects to the same project with `apps/web` as its root directory, Bun frozen installs, Node.js 24.x, and `BACKEND_URL` stored as Config in the Production and Preview environments.
 
 ## Remaining gates
 

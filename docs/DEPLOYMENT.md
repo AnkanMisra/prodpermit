@@ -83,6 +83,8 @@ Set this Production and Preview environment variable:
 BACKEND_URL=https://ankan-linux.tailf04855.ts.net
 ```
 
+Store `BACKEND_URL` as a Vercel Config value. It is a public hostname, not a secret.
+
 Preview builds are build checks only. The Rust API accepts the exact production Vercel origin.
 
 If Vercel assigns a different production hostname, update `ALLOWED_ORIGIN` in `.env.backend`, redeploy the backend, and then redeploy Vercel.
@@ -95,6 +97,26 @@ Check the two public paths:
 curl --fail https://ankan-linux.tailf04855.ts.net/api/health
 curl --fail https://recovery-control-room.vercel.app/api/backend/health
 ```
+
+The machine's MagicDNS resolver maps the Funnel hostname to its private `100.x` address. That result does not prove that the public Funnel edge works. Resolve the public address through a public DNS server and test it explicitly:
+
+```bash
+for public_ip in $(dig @1.1.1.1 +short ankan-linux.tailf04855.ts.net A); do
+  curl --resolve "ankan-linux.tailf04855.ts.net:443:$public_ip" \
+    --fail https://ankan-linux.tailf04855.ts.net/api/health
+done
+```
+
+Test every returned address. A failure on one address with a success on another identifies a Tailscale public-edge problem, not a Rust or SQLite failure. The Vercel rewrite health check remains the judge-path check.
+
+If local health passes but the public edge or Vercel rewrite stalls, refresh the Funnel relay state:
+
+```bash
+tailscale funnel --https=443 off
+tailscale funnel --bg http://127.0.0.1:8080
+```
+
+Then repeat both public health checks before asking an agent to invoke a tool.
 
 Confirm the frontend sends these headers:
 
