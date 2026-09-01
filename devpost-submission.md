@@ -137,6 +137,7 @@ Ready:
 - The complete recovery workflow passes against production.
 - The repository is public and contains an MIT license, source, screenshots, and run instructions.
 - Chrome for Testing 151 discovered and invoked the native WebMCP tools.
+- ChatGPT's in-app browser investigated the live incident, prepared plan `743b1fee-7ab4-4144-b06c-88382f99ddcf`, waited for human approval, executed it, and independently verified the recovery.
 - The rules are acknowledged and the participant is registered.
 
 Still required:
@@ -151,7 +152,7 @@ Still required:
 - The app demonstrates one deterministic checkout incident and one safe rollback target.
 - The recovery changes demo state. It does not connect to a real production deployment system.
 - The Rust service and SQLite database run on an always-on personal Linux machine. The demo is unavailable if that machine or Tailscale Funnel is offline.
-- The native WebMCP verification used Chrome for Testing 151. The project has not claimed a ChatGPT in-app browser run.
+- The app depends on a WebMCP-capable client. Firefox can display the workspace but cannot invoke its agent tools.
 - Preview deployments cannot execute recovery mutations because the backend accepts only the stable production origin.
 
 ## TODO Official Form Fields
@@ -168,7 +169,7 @@ The live Devpost form requires these values:
 | Live URL | https://recovery-control-room.vercel.app |
 | Testing instructions | Use the steps in this draft. No credentials are required |
 | Public code repository | https://github.com/AnkanMisra/webmcp-project |
-| Tested agents or clients | Chrome for Testing 151 with native WebMCP; automated Playwright model-context harness |
+| Tested agents or clients | ChatGPT desktop in-app browser; Chrome for Testing 151 with native WebMCP; automated Playwright model-context harness |
 | AI tools used | OpenAI Codex |
 | Learning level | TODO: Confirm `None`, `Moderate`, or `Significant` |
 | Career AI value | TODO: Confirm `Yes` or `No` |

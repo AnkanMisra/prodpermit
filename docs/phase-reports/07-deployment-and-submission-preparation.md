@@ -24,6 +24,7 @@ The following checks passed on September 1, 2026:
 - The frontend returned the required WebMCP and security headers.
 - Five Chromium journeys passed against the production URL.
 - The journeys covered initial tool registration, investigation, human approval, execution, verification, reset, and capability revocation across reload.
+- ChatGPT's in-app browser then completed the public recovery flow after human approval and independently verified healthy `release_283`.
 - Restarting the API container preserved the SQLite file at the same volume inode and size.
 - The container returned to the `healthy` state after restart.
 - GitHub's unauthenticated API reported public repository visibility and the MIT license.

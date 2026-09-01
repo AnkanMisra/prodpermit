@@ -37,6 +37,7 @@ Status: `in_progress`
 - Strict Rust checks, all 26 Rust behavior tests, Bun production dependency audit, and the credential-pattern scan pass after the fixes.
 - Phase 6 passed the frozen Bun install, TypeScript, ESLint, 10 Vitest tests, Next.js production build, five Chromium journeys, Compose validation, and final API and web image builds.
 - Chrome for Testing 151 with native WebMCP flags discovered all six initial tools, invoked the real callbacks, exposed execution only after the human approval click, executed the rollback, removed execution, and verified `release_283` as healthy.
+- ChatGPT's in-app browser completed the same public workflow with plan `743b1fee-7ab4-4144-b06c-88382f99ddcf` and reported healthy `release_283`, a resolved incident, `DB_CONNECTION_OK`, and passed recovery verification.
 - Visual inspection of `output/playwright/phase-4-recovery.png` confirmed readable fingerprint, evidence, resolved state, recovery verification, and audit history without clipping.
 
 ## Current work

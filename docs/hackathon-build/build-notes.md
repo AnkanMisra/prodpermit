@@ -21,3 +21,5 @@ Phase 6 completed the full local release gate. Rust, Bun, Next.js, Playwright, D
 Phase 7 deployed the Rust API with persistent SQLite on Ankan-Linux, published it through Tailscale Funnel, and deployed the Next.js frontend to Vercel. Five Chromium journeys passed against the public application. The repository is public with an MIT license.
 
 The participant acknowledged the official rules. The local Devpost draft now maps the verified project evidence to the live form fields and judging criteria. Participant-specific selections and the public video URL remain open.
+
+The participant used ChatGPT's in-app browser against the public site. ChatGPT found the database authentication regression, prepared plan `743b1fee-7ab4-4144-b06c-88382f99ddcf`, waited for the approval click, executed the rollback, and verified healthy `release_283`.
