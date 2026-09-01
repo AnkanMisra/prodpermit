@@ -15,6 +15,11 @@ Status: `in_progress`
 - The submission deadline is September 3, 2026 at 1:00 p.m. Pacific Time.
 - The current browser API is `document.modelContext`.
 - Devpost rules acknowledgment remains pending because only the participant can accept the terms.
+- The Rust API is healthy in Docker with SQLite stored in the `recovery-control-room-api-data` volume.
+- Tailscale Funnel publishes the API at `https://ankan-linux.tailf04855.ts.net`.
+- Vercel serves the frontend at `https://recovery-control-room.vercel.app`.
+- All five Chromium journeys pass against the production frontend and public backend.
+- `AnkanMisra/webmcp-project` is public and GitHub detects its MIT license.
 
 ## Completed work
 
@@ -36,21 +41,23 @@ Status: `in_progress`
 
 ## Current work
 
-- Deploy the Rust API and SQLite volume on Ankan-Linux.
-- Publish the API through `https://ankan-linux.tailf04855.ts.net` with Tailscale Funnel.
-- Deploy Recovery Control Room to Vercel Hobby from `main` and verify the public workflow.
-- Prepare the submission packet without submitting it.
+- Connect the Vercel project to `main` for automatic deployments.
+- Complete the participant-only Devpost rules acknowledgment.
+- Prepare the Devpost draft after the rules gate opens.
+- Record and publish the public narrated demo video.
+- Run the final submission check without submitting until the participant confirms.
 
 ## Blockers
 
 No engineering blocker is active. Git checkpoints are configured and pushed to `origin/main`.
 
-The following later actions require human input:
+The following actions require human input:
 
 - Acknowledge the official Devpost rules.
-- Authorize hosting credentials and paid resources.
+- Authorize the Vercel Git connection.
+- Record or approve the public narrated demo video.
 - Approve the final Devpost submission.
 
 ## Next task
 
-Deploy the loopback-only backend, enable Tailscale Funnel, and create the Vercel production project for Recovery Control Room.
+Review and acknowledge the official Devpost rules. Then prepare the draft and demo packet.

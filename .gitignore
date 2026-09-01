@@ -8,6 +8,7 @@ node_modules/
 playwright-report/
 test-results/
 target/
+*.tsbuildinfo
 data/*.db
 data/*.db-*
 *.db

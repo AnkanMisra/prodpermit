@@ -11,7 +11,22 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 | 4. Recovery lifecycle | completed | Human approval gates one atomic recovery and verification | [Phase 4](phase-reports/04-recovery-lifecycle.md) |
 | 5. Reliability and security | completed | Isolation and abuse tests pass; validated security findings are fixed | [Phase 5](phase-reports/05-reliability-and-security.md) |
 | 6. Full verification | completed | Tests, builds, browser checks, and a real WebMCP client pass | [Phase 6](phase-reports/06-full-verification.md) |
-| 7. Deployment and submission preparation | in_progress | Live URLs and submission packet are complete | Pending |
+| 7. Deployment and submission preparation | in_progress | Live URLs and submission packet are complete | [Phase 7](phase-reports/07-deployment-and-submission-preparation.md) |
+
+## Phase 7 tasks
+
+| Task | Status | Verification |
+|---|---|---|
+| Deploy the Rust API with persistent SQLite | completed | Container is healthy and the database survives restart |
+| Publish the API through Tailscale Funnel | completed | Public `/api/health` returns `200` |
+| Deploy the Next.js frontend to Vercel | completed | Production deployment is ready at the stable alias |
+| Verify the production recovery workflow | completed | Five Chromium journeys pass against the public URL |
+| Publish the repository and license | completed | GitHub reports public visibility and detects MIT |
+| Connect Vercel automatic deployments to `main` | blocked | Vercel CLI or dashboard authorization is required |
+| Acknowledge the official Devpost rules | blocked | Participant must reply `yes` after reviewing the official terms |
+| Prepare the Devpost draft and demo packet | blocked | Rules acknowledgment must complete first |
+| Publish the narrated demo video | blocked | Participant must record or approve the final video |
+| Submit and verify the Devpost entry | blocked | Participant must explicitly approve the final submission |
 
 ## Phase 1 tasks
 

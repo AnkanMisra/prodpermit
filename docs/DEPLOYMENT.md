@@ -10,7 +10,7 @@ This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API
 | Frontend | Vercel Hobby | `https://recovery-control-room.vercel.app` or the assigned production hostname |
 | Rust and SQLite | Docker on Ankan-Linux | Loopback port `127.0.0.1:8080` |
 | API ingress | Tailscale Funnel | `https://ankan-linux.tailf04855.ts.net` |
-| Demo video | YouTube | Unlisted, link-accessible video under three minutes |
+| Demo video | YouTube | Public video with audio under three minutes |
 
 SQLite must stay with the Rust service. The recovery transaction depends on a single local database writer and a persistent filesystem.
 
@@ -134,6 +134,8 @@ git pull --ff-only origin main
 Record `git rev-parse HEAD` before updating. If the backend smoke test fails, check out that recorded commit, run the deployment script, then return the checkout to `main` after service recovery.
 
 Vercel can instantly move the production alias back to a previously verified deployment from the dashboard.
+
+The first production deployment used the connected Vercel integration. Connect the Vercel project to `AnkanMisra/webmcp-project` before relying on automatic deployments from `main`.
 
 ## Stop public access
 
