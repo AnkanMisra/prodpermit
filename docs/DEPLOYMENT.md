@@ -1,6 +1,6 @@
 # Deploy Recovery Control Room for free
 
-This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API with SQLite on Ankan-Linux. Tailscale Funnel publishes the API over HTTPS. The setup uses provider domains and requires no paid storage or database migration.
+This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API with SQLite on Ankan-Linux. A Cloudflare Quick Tunnel publishes the API over HTTPS. Tailscale Funnel remains available as a fallback. The setup uses provider domains and requires no paid storage or database migration.
 
 ## Public topology
 
@@ -9,7 +9,8 @@ This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API
 | Source | GitHub | `https://github.com/AnkanMisra/webmcp-project` |
 | Frontend | Vercel Hobby | `https://recovery-control-room.vercel.app` or the assigned production hostname |
 | Rust and SQLite | Docker on Ankan-Linux | Loopback port `127.0.0.1:8080` |
-| API ingress | Tailscale Funnel | `https://ankan-linux.tailf04855.ts.net` |
+| Primary API ingress | Cloudflare Quick Tunnel | Generated `https://*.trycloudflare.com` address |
+| Fallback API ingress | Tailscale Funnel | `https://ankan-linux.tailf04855.ts.net` |
 | Demo video | YouTube | Public video with audio under three minutes |
 
 SQLite must stay with the Rust service. The recovery transaction depends on a single local database writer and a persistent filesystem.
@@ -52,7 +53,21 @@ docker compose --env-file .env.backend -f deploy/backend.compose.yml ps
 docker volume inspect recovery-control-room-api-data
 ```
 
-## Publish the API with Funnel
+## Publish the API with Cloudflare
+
+Deploy the Quick Tunnel and update Vercel:
+
+```bash
+bun run deploy:ingress
+```
+
+The script starts a new pinned `cloudflared` container without stopping the active tunnel, verifies the generated public URL, stores that URL as Vercel's Production and Preview `BACKEND_URL` Config value, redeploys the build currently assigned to the production alias, and verifies that the alias moved to the new deployment. It removes the old tunnel only after the stable Vercel health path passes. A failed run leaves both tunnels running.
+
+Cloudflare assigns a new `trycloudflare.com` hostname whenever the tunnel container is recreated. Run `bun run deploy:ingress` after any recreation so Vercel receives the new hostname. Keep the machine and container running through judging.
+
+Cloudflare documents Quick Tunnels as a testing and development feature without an uptime guarantee. The tunnel fits this short demo window, but a named tunnel should replace it for long-term operation.
+
+## Keep Tailscale Funnel as fallback
 
 Enable the HTTPS Funnel once:
 
@@ -62,7 +77,23 @@ tailscale funnel status
 curl --fail https://ankan-linux.tailf04855.ts.net/api/health
 ```
 
-The `--bg` configuration resumes after Tailscale or the machine restarts. Port 8080 remains bound to loopback, so Funnel is the only public API ingress.
+The `--bg` configuration resumes after Tailscale or the machine restarts. Port 8080 remains bound to loopback. Cloudflare and Tailscale reach it only through outbound tunnel connections.
+
+To switch Vercel to the Tailscale fallback, run:
+
+```bash
+bunx vercel@59.11.1 env add BACKEND_URL production,preview \
+  --project prj_iITAQdIP6yUbpTrvCKmgEuNWrdTF \
+  --value https://ankan-linux.tailf04855.ts.net \
+  --force --no-sensitive --yes --scope ankanmisras-projects
+current_url="$(bunx vercel@59.11.1 inspect \
+  https://recovery-control-room.vercel.app \
+  --json --scope ankanmisras-projects | jq -r .url)"
+bunx vercel@59.11.1 redeploy "$current_url" \
+  --target production --scope ankanmisras-projects
+```
+
+When Cloudflare recovers, run `bun run deploy:ingress` again. The script creates a new Cloudflare URL, updates Vercel, verifies the cutover, and removes the old managed Cloudflare container.
 
 ## Configure Vercel
 
@@ -80,10 +111,10 @@ Import `AnkanMisra/webmcp-project` as a Vercel project with these settings:
 Set this Production and Preview environment variable:
 
 ```text
-BACKEND_URL=https://ankan-linux.tailf04855.ts.net
+BACKEND_URL=https://<generated-name>.trycloudflare.com
 ```
 
-Store `BACKEND_URL` as a Vercel Config value. It is a public hostname, not a secret.
+Store `BACKEND_URL` as a Vercel Config value. It is a public hostname, not a secret. `bun run deploy:ingress` updates it automatically.
 
 Preview builds are build checks only. The Rust API accepts the exact production Vercel origin.
 
@@ -94,7 +125,7 @@ If Vercel assigns a different production hostname, update `ALLOWED_ORIGIN` in `.
 Check the two public paths:
 
 ```bash
-curl --fail https://ankan-linux.tailf04855.ts.net/api/health
+curl --fail https://<generated-name>.trycloudflare.com/api/health
 curl --fail https://recovery-control-room.vercel.app/api/backend/health
 ```
 

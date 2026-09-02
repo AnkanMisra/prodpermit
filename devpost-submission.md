@@ -72,7 +72,7 @@ The repository keeps phase reports and an audit log so each design and verificat
 
 ## Architecture
 
-The Next.js 16 frontend runs on Vercel. It calls `/api/backend/*` on its own origin. A Next.js rewrite sends those requests through Tailscale Funnel to the Rust service on Ankan-Linux.
+The Next.js 16 frontend runs on Vercel. It calls `/api/backend/*` on its own origin. A Next.js rewrite sends those requests through Cloudflare Tunnel to the Rust service on Ankan-Linux. Tailscale Funnel remains a fallback ingress.
 
 Rust and Axum own domain rules, authorization, plan fingerprints, session validity, and recovery transitions. SQLite stores isolated demo sessions, evidence, recovery plans, verification facts, and audit events in a persistent Docker volume.
 
@@ -99,7 +99,9 @@ The production release also passed five automated Chromium journeys covering thi
 
 https://recovery-control-room.vercel.app
 
-Backend health endpoint: https://ankan-linux.tailf04855.ts.net/api/health
+Primary backend health through Vercel: https://recovery-control-room.vercel.app/api/backend/health
+
+Fallback backend health: https://ankan-linux.tailf04855.ts.net/api/health
 
 ## Public Repository Link
 
@@ -151,7 +153,7 @@ Still required:
 
 - The app demonstrates one deterministic checkout incident and one safe rollback target.
 - The recovery changes demo state. It does not connect to a real production deployment system.
-- The Rust service and SQLite database run on an always-on personal Linux machine. The demo is unavailable if that machine or Tailscale Funnel is offline.
+- The Rust service and SQLite database run on an always-on personal Linux machine. The demo is unavailable if that machine or the active tunnel is offline.
 - The app depends on a WebMCP-capable client. Firefox can display the workspace but cannot invoke its agent tools.
 - Preview deployments cannot execute recovery mutations because the backend accepts only the stable production origin.
 
