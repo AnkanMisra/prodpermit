@@ -19,7 +19,8 @@
     "test:e2e": "bun run --cwd apps/web test:e2e",
     "build:containers": "docker compose build",
     "deploy:backend:check": "docker compose --env-file .env.backend -f deploy/backend.compose.yml config --quiet",
-    "deploy:backend": "./scripts/deploy-backend.sh"
+    "deploy:backend": "./scripts/deploy-backend.sh",
+    "deploy:ingress": "./scripts/deploy-cloudflare-ingress.sh"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

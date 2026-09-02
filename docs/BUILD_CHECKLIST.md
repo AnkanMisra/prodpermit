@@ -19,6 +19,7 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 |---|---|---|
 | Deploy the Rust API with persistent SQLite | completed | Container is healthy and the database survives restart |
 | Publish the API through Tailscale Funnel | completed | Public `/api/health` returns `200` |
+| Add Cloudflare Quick Tunnel as primary ingress | completed | Twenty health requests and the complete recovery lifecycle pass through Vercel |
 | Deploy the Next.js frontend to Vercel | completed | Production deployment is ready at the stable alias |
 | Verify the production recovery workflow | completed | Five Chromium journeys pass against the public URL |
 | Publish the repository and license | completed | GitHub reports public visibility and detects MIT |

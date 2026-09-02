@@ -71,7 +71,7 @@ The browser tests inject the current `document.modelContext` contract and call t
 - Next.js 16 and React 19 render the operational workspace on Vercel.
 - Rust and Axum own domain rules, authorization, session state, and recovery transitions.
 - SQLite stores isolated demo sessions, recovery evidence, and the audit timeline.
-- Tailscale Funnel publishes the loopback-only Rust service over HTTPS.
+- Cloudflare Tunnel publishes the loopback-only Rust service over HTTPS. Tailscale Funnel remains a fallback.
 - Secure cookies bind each browser to one demo session.
 
 The Rust backend is the only authority for recovery eligibility and capability state. TypeScript validates wire data and registers browser tools, but it does not duplicate recovery rules.

@@ -2,7 +2,7 @@
 
 ## System shape
 
-The browser loads a Next.js App Router application from Vercel. The frontend calls `/api/backend/*`. A Next.js external rewrite sends those requests through Tailscale Funnel to the Rust service on Ankan-Linux. The browser therefore uses one visible origin and stores the Rust session cookie against the frontend origin.
+The browser loads a Next.js App Router application from Vercel. The frontend calls `/api/backend/*`. A Next.js external rewrite sends those requests through Cloudflare Tunnel to the Rust service on Ankan-Linux. Tailscale Funnel remains a fallback. The browser therefore uses one visible origin and stores the Rust session cookie against the frontend origin.
 
 The Rust service uses one SQLite database and one service instance. Each session owns a complete scenario copy. A reset creates a new session instead of rewriting shared global state.
 
@@ -129,7 +129,7 @@ The plan panel is an accessible in-page region. Move focus to its heading when p
 
 Deploy the frontend to Vercel with Node 24.x. Bun installs and builds the application.
 
-Deploy the Rust service as a reproducible container on the always-on Ankan-Linux machine. Store SQLite in a named Docker volume, bind the service to `127.0.0.1:8080`, and publish it through Tailscale Funnel. Configure `/api/health` as the container and public health check.
+Deploy the Rust service as a reproducible container on the always-on Ankan-Linux machine. Store SQLite in a named Docker volume, bind the service to `127.0.0.1:8080`, and publish it through Cloudflare Tunnel with Tailscale Funnel as fallback. Configure `/api/health` as the container and public health check.
 
 Set `Origin-Agent-Cluster: ?1` and `Permissions-Policy: tools=(self)` on the frontend. Do not enable cross-origin credentials on the Rust service.
 

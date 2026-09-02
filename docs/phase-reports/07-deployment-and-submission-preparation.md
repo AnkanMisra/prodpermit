@@ -14,7 +14,7 @@ The application, backend, and repository are public. The production recovery wor
 | Backend ingress | `https://ankan-linux.tailf04855.ts.net` | Healthy |
 | Source | `https://github.com/AnkanMisra/webmcp-project` | Public, MIT |
 
-The API container binds only to `127.0.0.1:8080`. Tailscale Funnel terminates public HTTPS and proxies to the loopback service. The named Docker volume `recovery-control-room-api-data` stores SQLite.
+The API container binds only to `127.0.0.1:8080`. Cloudflare Tunnel is the primary public HTTPS ingress, and Tailscale Funnel remains the fallback. The named Docker volume `recovery-control-room-api-data` stores SQLite.
 
 ## Production verification
 
@@ -29,6 +29,7 @@ The following checks passed on September 1, 2026:
 - The container returned to the `healthy` state after restart.
 - GitHub's unauthenticated API reported public repository visibility and the MIT license.
 - A later diagnostic invocation exposed a stalled public Funnel relay while the container remained healthy. Reapplying the Funnel configuration restored both the public edge and Vercel rewrite to `200`.
+- Tailscale remained intermittent, so Cloudflare Quick Tunnel became the primary ingress. The replacement passed 20 consecutive Vercel health requests and the complete prepare, approve, execute, and verify lifecycle.
 
 ## Deployment record
 
@@ -38,7 +39,7 @@ The following checks passed on September 1, 2026:
 - Production deployment ID: `dpl_CZGvpE1VWfk8mWyMgJXzLD97aH69`
 - Production runtime: Node.js 24.x
 
-The connected Vercel integration created the first production deployment. GitHub now connects to the same project with `apps/web` as its root directory, Bun frozen installs, Node.js 24.x, and `BACKEND_URL` stored as Config in the Production and Preview environments.
+The connected Vercel integration created the first production deployment. GitHub now connects to the same project with `apps/web` as its root directory, Bun frozen installs, Node.js 24.x, and `BACKEND_URL` stored as Config in the Production and Preview environments. The Config value now points to the active Cloudflare Quick Tunnel.
 
 ## Remaining gates
 
