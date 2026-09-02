@@ -11,7 +11,8 @@ The application, backend, and repository are public. The production recovery wor
 | Component | Address | State |
 |---|---|---|
 | Frontend | `https://recovery-control-room.vercel.app` | Ready |
-| Backend ingress | `https://ankan-linux.tailf04855.ts.net` | Healthy |
+| Primary backend ingress | Generated `https://*.trycloudflare.com` address in Vercel `BACKEND_URL` | Active |
+| Fallback backend ingress | `https://ankan-linux.tailf04855.ts.net` | Available |
 | Source | `https://github.com/AnkanMisra/webmcp-project` | Public, MIT |
 
 The API container binds only to `127.0.0.1:8080`. Cloudflare Tunnel is the primary public HTTPS ingress, and Tailscale Funnel remains the fallback. The named Docker volume `recovery-control-room-api-data` stores SQLite.

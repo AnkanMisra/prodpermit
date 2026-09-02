@@ -99,7 +99,9 @@ The production release also passed five automated Chromium journeys covering thi
 
 https://recovery-control-room.vercel.app
 
-Backend health endpoint: https://ankan-linux.tailf04855.ts.net/api/health
+Primary backend health through Vercel: https://recovery-control-room.vercel.app/api/backend/health
+
+Fallback backend health: https://ankan-linux.tailf04855.ts.net/api/health
 
 ## Public Repository Link
 

@@ -5,7 +5,8 @@ Recovery Control Room is a browser-native incident workspace for human-approved 
 ## Try the live application
 
 - Application: https://recovery-control-room.vercel.app
-- API health: https://ankan-linux.tailf04855.ts.net/api/health
+- Primary API health through Vercel: https://recovery-control-room.vercel.app/api/backend/health
+- Fallback API health: https://ankan-linux.tailf04855.ts.net/api/health
 
 The backend runs on an always-on Linux machine. If the machine is offline, the live demo cannot create or load sessions.
 

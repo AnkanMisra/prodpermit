@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-compose_file="$repo_root/deploy/cloudflare-quick-tunnel.compose.yml"
-compose_project="recovery-control-room-cloudflare"
 vercel_project="prj_iITAQdIP6yUbpTrvCKmgEuNWrdTF"
 vercel_scope="ankanmisras-projects"
 vercel_origin="https://recovery-control-room.vercel.app"
 vercel_package="vercel@59.11.1"
+cloudflared_image="cloudflare/cloudflared@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339"
+new_container="recovery-control-room-cloudflared-$(date +%s%N)"
 
 for required_command in bunx curl dig docker jq; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
@@ -16,18 +15,23 @@ for required_command in bunx curl dig docker jq; do
   fi
 done
 
-docker compose \
-  --project-name "$compose_project" \
-  --file "$compose_file" \
-  up --detach --force-recreate --pull always
+docker run --detach \
+  --name "$new_container" \
+  --restart unless-stopped \
+  --network host \
+  --read-only \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --log-driver json-file \
+  --log-opt max-size=10m \
+  --log-opt max-file=3 \
+  "$cloudflared_image" \
+  tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:8080 >/dev/null
 
 tunnel_url=""
 for _ in $(seq 1 45); do
   tunnel_url="$(
-    docker compose \
-      --project-name "$compose_project" \
-      --file "$compose_file" \
-      logs --no-color cloudflared 2>&1 |
+    docker logs "$new_container" 2>&1 |
       sed -nE 's#.*(https://[a-z0-9-]+\.trycloudflare\.com).*#\1#p' |
       tail -1
   )"
@@ -61,13 +65,12 @@ if [[ "$tunnel_ready" != "true" ]]; then
   exit 1
 fi
 
-latest_production_url="$(
-  bunx "$vercel_package" list recovery-control-room \
-    --prod \
-    --format json \
-    --scope "$vercel_scope" |
-    jq -er '.deployments | map(select(.target == "production" and .state == "READY")) | first | .url'
+current_production_json="$(
+  bunx "$vercel_package" inspect "$vercel_origin" \
+    --json \
+    --scope "$vercel_scope"
 )"
+current_production_url="$(jq -er '.url' <<<"$current_production_json")"
 
 bunx "$vercel_package" env add BACKEND_URL production,preview \
   --project "$vercel_project" \
@@ -78,7 +81,7 @@ bunx "$vercel_package" env add BACKEND_URL production,preview \
   --scope "$vercel_scope"
 
 redeploy_output="$(
-  bunx "$vercel_package" redeploy "$latest_production_url" \
+  bunx "$vercel_package" redeploy "$current_production_url" \
     --target production \
     --no-wait \
     --scope "$vercel_scope" 2>&1
@@ -95,14 +98,47 @@ if [[ ! "$deployment_url" =~ ^https://recovery-control-room-[a-z0-9-]+\.vercel\.
   exit 1
 fi
 
-bunx "$vercel_package" inspect "$deployment_url" \
-  --wait \
-  --timeout 3m \
-  --scope "$vercel_scope" >/dev/null
+new_deployment_json="$(
+  bunx "$vercel_package" inspect "$deployment_url" \
+    --wait \
+    --timeout 3m \
+    --json \
+    --scope "$vercel_scope"
+)"
+new_deployment_id="$(jq -er '.id' <<<"$new_deployment_json")"
+
+alias_ready="false"
+for _ in $(seq 1 30); do
+  alias_deployment_id="$(
+    bunx "$vercel_package" inspect "$vercel_origin" \
+      --json \
+      --scope "$vercel_scope" |
+      jq -er '.id'
+  )"
+  if [[ "$alias_deployment_id" == "$new_deployment_id" ]]; then
+    alias_ready="true"
+    break
+  fi
+  sleep 2
+done
+
+if [[ "$alias_ready" != "true" ]]; then
+  echo "The production alias did not move to the new deployment." >&2
+  exit 1
+fi
 
 for _ in $(seq 1 45); do
   if curl --fail --silent --show-error --max-time 5 \
     "$vercel_origin/api/backend/health" >/dev/null 2>&1; then
+    while read -r old_container; do
+      if [[ -n "$old_container" && "$old_container" != "$new_container" ]]; then
+        docker rm --force "$old_container" >/dev/null
+      fi
+    done < <(
+      docker ps --all --format '{{.Names}}' |
+        grep -E '^recovery-control-room-cloudflared-[0-9]+$|^recovery-control-room-cloudflare-cloudflared-1$' ||
+        true
+    )
     printf 'cloudflare_url=%s\nvercel_health=%s/api/backend/health\n' \
       "$tunnel_url" "$vercel_origin"
     exit 0
