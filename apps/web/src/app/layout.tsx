@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Recovery Control Room",
-  description: "A browser-native incident recovery workspace powered by WebMCP."
+  title: "ProdPermit | Human-approved incident recovery",
+  description:
+    "A WebMCP incident workspace where agents investigate and humans approve production recovery."
 };
 
 export const viewport: Viewport = {
@@ -20,4 +21,3 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     </html>
   );
 }
-

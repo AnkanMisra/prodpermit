@@ -52,6 +52,8 @@ test("renders the Rust-backed broken incident without browser errors", async ({ 
   expect(response?.headers()["origin-agent-cluster"]).toBe("?1");
   expect(response?.headers()["permissions-policy"]).toBe("tools=(self)");
 
+  expect(await page.title()).toBe("ProdPermit | Human-approved incident recovery");
+  await expect(page.getByText("ProdPermit", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "checkout-api" })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("Critical");
   await expect(page.getByText("18.7%", { exact: true })).toBeVisible();

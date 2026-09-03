@@ -280,7 +280,7 @@ export function ControlRoom() {
       </a>
       <header className="site-header">
         <div>
-          <p className="product-mark">recovery-control-room</p>
+          <p className="product-mark">ProdPermit</p>
           <p className="product-subtitle">Browser-native incident recovery workspace</p>
         </div>
         <div className="header-signals">

@@ -1,6 +1,6 @@
 # Title
 
-Recovery Control Room
+ProdPermit
 
 ## One-line Summary
 
@@ -12,7 +12,7 @@ Incident response forces operators to move between dashboards, logs, release his
 
 ## Solution
 
-Recovery Control Room turns one checkout incident into a complete human-agent recovery workflow. The website exposes structured investigation tools through `document.modelContext.registerTool`. An agent can inspect the incident, compare releases, query bounded logs, run a safe diagnostic, and prepare a rollback plan.
+ProdPermit turns one checkout incident into a complete human-agent recovery workflow. The website exposes structured investigation tools through `document.modelContext.registerTool`. An agent can inspect the incident, compare releases, query bounded logs, run a safe diagnostic, and prepare a rollback plan.
 
 Preparation does not change production. Rust resolves the cited evidence, checks that the target is a known healthy release, creates an immutable plan, and returns its fingerprint. The browser shows the complete plan to the operator. Only the approval click can cause Rust to expose `execute_approved_recovery`. The capability accepts only the approved plan ID and disappears after execution, rejection, revocation, reset, or expiry.
 
@@ -28,7 +28,7 @@ The result is faster investigation without permanent agent write access.
 
 ## How We Used AI
 
-Recovery Control Room does not hide an AI model behind a chat box. It exposes a workflow that any compatible agent can use through the browser's WebMCP interface.
+ProdPermit does not hide an AI model behind a chat box. It exposes a workflow that any compatible agent can use through the browser's WebMCP interface.
 
 Six tools exist when a session starts:
 
@@ -105,7 +105,7 @@ Fallback backend health: https://ankan-linux.tailf04855.ts.net/api/health
 
 ## Public Repository Link
 
-https://github.com/AnkanMisra/webmcp-project
+https://github.com/AnkanMisra/prodpermit
 
 The repository is public. GitHub detects the MIT license and the README contains local run and verification commands.
 
@@ -170,7 +170,7 @@ The live Devpost form requires these values:
 | Existing-project changes | Not applicable for a new project |
 | Live URL | https://recovery-control-room.vercel.app |
 | Testing instructions | Use the steps in this draft. No credentials are required |
-| Public code repository | https://github.com/AnkanMisra/webmcp-project |
+| Public code repository | https://github.com/AnkanMisra/prodpermit |
 | Tested agents or clients | ChatGPT desktop in-app browser; Chrome for Testing 151 with native WebMCP; automated Playwright model-context harness |
 | AI tools used | OpenAI Codex |
 | Learning level | TODO: Confirm `None`, `Moderate`, or `Significant` |

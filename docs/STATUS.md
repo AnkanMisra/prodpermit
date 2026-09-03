@@ -21,7 +21,7 @@ Status: `in_progress`
 - Vercel serves the frontend at `https://recovery-control-room.vercel.app`.
 - The Vercel rewrite and the public Funnel edge both return `200` after the Funnel relay refresh.
 - All five Chromium journeys pass against the production frontend and public backend.
-- `AnkanMisra/webmcp-project` is public and GitHub detects its MIT license.
+- `AnkanMisra/prodpermit` is public and GitHub detects its MIT license.
 
 ## Completed work
 
@@ -44,6 +44,8 @@ Status: `in_progress`
 - The deployment runbook now distinguishes private MagicDNS health from the public Funnel edge and includes the relay refresh procedure.
 - The Cloudflare-backed Vercel path passed 20 consecutive health requests and the complete prepare, approve, execute, and verify lifecycle.
 - The judge-facing README now includes measured recovery outcomes, a capability lifecycle, a system architecture diagram, and direct links to the WebMCP implementation.
+- The public product name is ProdPermit. Stable infrastructure identifiers retain `recovery-control-room` to avoid a deadline-day migration.
+- Playwright now uses ports 13000 and 18080, so browser tests cannot reuse the production Docker API on port 8080.
 
 ## Current work
 
