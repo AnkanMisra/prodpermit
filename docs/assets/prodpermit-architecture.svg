@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title description">
-  <title id="title">Recovery Control Room system architecture</title>
+  <title id="title">ProdPermit system architecture</title>
   <desc id="description">A WebMCP agent and a human operator use a Next.js workspace. Vercel and Cloudflare route calls to a Rust API that owns authorization and persists recovery state in SQLite.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">

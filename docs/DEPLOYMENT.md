@@ -1,4 +1,4 @@
-# Deploy Recovery Control Room for free
+# Deploy ProdPermit for free
 
 This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API with SQLite on Ankan-Linux. A Cloudflare Quick Tunnel publishes the API over HTTPS. Tailscale Funnel remains available as a fallback. The setup uses provider domains and requires no paid storage or database migration.
 
@@ -6,7 +6,7 @@ This runbook deploys the Next.js frontend to Vercel Hobby and keeps the Rust API
 
 | Component | Location | Public address |
 |---|---|---|
-| Source | GitHub | `https://github.com/AnkanMisra/webmcp-project` |
+| Source | GitHub | `https://github.com/AnkanMisra/prodpermit` |
 | Frontend | Vercel Hobby | `https://recovery-control-room.vercel.app` or the assigned production hostname |
 | Rust and SQLite | Docker on Ankan-Linux | Loopback port `127.0.0.1:8080` |
 | Primary API ingress | Cloudflare Quick Tunnel | Generated `https://*.trycloudflare.com` address |
@@ -97,7 +97,7 @@ When Cloudflare recovers, run `bun run deploy:ingress` again. The script creates
 
 ## Configure Vercel
 
-Import `AnkanMisra/webmcp-project` as a Vercel project with these settings:
+Import `AnkanMisra/prodpermit` as a Vercel project with these settings:
 
 - Project name: `recovery-control-room`
 - Production branch: `main`
@@ -188,7 +188,7 @@ Record `git rev-parse HEAD` before updating. If the backend smoke test fails, ch
 
 Vercel can instantly move the production alias back to a previously verified deployment from the dashboard.
 
-The first production deployment used the connected Vercel integration. The project now connects to `AnkanMisra/webmcp-project` with `apps/web` as its root directory. Verified pushes to `main` trigger production deployments.
+The first production deployment used the connected Vercel integration. The project now connects to `AnkanMisra/prodpermit` with `apps/web` as its root directory. Verified pushes to `main` trigger production deployments.
 
 ## Stop public access
 

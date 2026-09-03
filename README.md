@@ -1,4 +1,4 @@
-# Recovery Control Room
+# ProdPermit
 
 **An incident response workspace where an agent investigates a checkout failure, but a person must approve the exact recovery before execution becomes possible.**
 
@@ -6,7 +6,7 @@
 
 Built for [The WebMCP Challenge](https://webmcp.devpost.com/). No account or credentials are required.
 
-![Recovery Control Room after a verified rollback](output/playwright/phase-4-recovery.png)
+![ProdPermit after a verified rollback](output/playwright/phase-4-recovery.png)
 
 | Before recovery | After recovery |
 |---|---|
@@ -19,7 +19,7 @@ Built for [The WebMCP Challenge](https://webmcp.devpost.com/). No account or cre
 
 Agents can shorten incident investigation, but permanent production access gives a mistaken or manipulated agent too much authority. A human still needs to understand the proposed change and approve it.
 
-Recovery Control Room demonstrates a narrower contract. The agent gathers structured evidence and prepares one immutable rollback plan. The person reviews its target, evidence, expiry, and SHA-256 fingerprint. Only that approval creates a temporary execution tool.
+ProdPermit demonstrates a narrower contract. The agent gathers structured evidence and prepares one immutable rollback plan. The person reviews its target, evidence, expiry, and SHA-256 fingerprint. Only that approval creates a temporary execution tool.
 
 ## Why WebMCP fits
 
@@ -42,7 +42,7 @@ This lets the agent investigate and recommend while the person controls the prod
 
 Use ChatGPT's in-app browser or Chrome 149 or later with `chrome://flags/#enable-webmcp-testing` enabled.
 
-1. Open the [live Recovery Control Room](https://recovery-control-room.vercel.app).
+1. Open the [live ProdPermit application](https://recovery-control-room.vercel.app).
 2. Confirm that `checkout-api` is critical on `release_284` with an 18.7% error rate.
 3. Give the agent this task:
 
@@ -105,13 +105,13 @@ Start with these files:
 - [`investigation-tools.ts`](apps/web/src/lib/webmcp/investigation-tools.ts) defines the four evidence-gathering tools.
 - [`recovery-tools.ts`](apps/web/src/lib/webmcp/recovery-tools.ts) defines preparation, verification, and conditional execution.
 
-Development started during the challenge submission period. Recovery Control Room is a new application, not an update to an existing product.
+Development started during the challenge submission period. ProdPermit is a new application, not an update to an existing product.
 
 ## Architecture
 
 The browser presents the shared workspace. The Rust service remains the sole authority for recovery, while SQLite preserves evidence and every state change.
 
-![Recovery Control Room architecture showing browser, public edge, and server authority boundaries](docs/assets/recovery-control-room-architecture.svg)
+![ProdPermit architecture showing browser, public edge, and server authority boundaries](docs/assets/prodpermit-architecture.svg)
 
 | Layer | Responsibility |
 |---|---|
@@ -192,4 +192,4 @@ Read the [deployment runbook](docs/DEPLOYMENT.md) for hosting, health checks, fa
 
 ## License
 
-Recovery Control Room uses the [MIT License](LICENSE).
+ProdPermit uses the [MIT License](LICENSE).

@@ -13,7 +13,7 @@ The application, backend, and repository are public. The production recovery wor
 | Frontend | `https://recovery-control-room.vercel.app` | Ready |
 | Primary backend ingress | Generated `https://*.trycloudflare.com` address in Vercel `BACKEND_URL` | Active |
 | Fallback backend ingress | `https://ankan-linux.tailf04855.ts.net` | Available |
-| Source | `https://github.com/AnkanMisra/webmcp-project` | Public, MIT |
+| Source | `https://github.com/AnkanMisra/prodpermit` | Public, MIT |
 
 The API container binds only to `127.0.0.1:8080`. Cloudflare Tunnel is the primary public HTTPS ingress, and Tailscale Funnel remains the fallback. The named Docker volume `recovery-control-room-api-data` stores SQLite.
 
@@ -32,6 +32,8 @@ The following checks passed on September 1, 2026:
 - A later diagnostic invocation exposed a stalled public Funnel relay while the container remained healthy. Reapplying the Funnel configuration restored both the public edge and Vercel rewrite to `200`.
 - Tailscale remained intermittent, so Cloudflare Quick Tunnel became the primary ingress. The replacement passed 20 consecutive Vercel health requests and the complete prepare, approve, execute, and verify lifecycle.
 - The repository README now leads with the live demo, measured recovery results, the human approval boundary, a capability sequence, and a system architecture diagram.
+- The public product name changed to ProdPermit. The live URL and internal deployment identifiers remain unchanged.
+- Playwright now starts isolated web and API servers on ports 13000 and 18080. Local tests no longer attach to the production container on port 8080.
 
 ## Deployment record
 
