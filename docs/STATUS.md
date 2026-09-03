@@ -43,6 +43,7 @@ Status: `in_progress`
 - Visual inspection of `output/playwright/phase-4-recovery.png` confirmed readable fingerprint, evidence, resolved state, recovery verification, and audit history without clipping.
 - The deployment runbook now distinguishes private MagicDNS health from the public Funnel edge and includes the relay refresh procedure.
 - The Cloudflare-backed Vercel path passed 20 consecutive health requests and the complete prepare, approve, execute, and verify lifecycle.
+- The judge-facing README now includes measured recovery outcomes, a capability lifecycle, a system architecture diagram, and direct links to the WebMCP implementation.
 
 ## Current work
 

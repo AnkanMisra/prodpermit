@@ -31,6 +31,7 @@ The following checks passed on September 1, 2026:
 - GitHub's unauthenticated API reported public repository visibility and the MIT license.
 - A later diagnostic invocation exposed a stalled public Funnel relay while the container remained healthy. Reapplying the Funnel configuration restored both the public edge and Vercel rewrite to `200`.
 - Tailscale remained intermittent, so Cloudflare Quick Tunnel became the primary ingress. The replacement passed 20 consecutive Vercel health requests and the complete prepare, approve, execute, and verify lifecycle.
+- The repository README now leads with the live demo, measured recovery results, the human approval boundary, a capability sequence, and a system architecture diagram.
 
 ## Deployment record
 
