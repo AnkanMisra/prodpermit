@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { RecoveryProgress } from "@/components/recovery-progress";
 
 import type {
   DiagnosticResult,
@@ -180,6 +181,7 @@ function RecoveryPanel({ recovery }: { recovery: RecoveryView }) {
           {plan?.status ?? "Not prepared"}
         </span>
       </div>
+      <RecoveryProgress plan={plan} verification={recovery.verification} />
       {plan ? (
         <div className="plan-content">
           <div className="plan-route">
