@@ -15,6 +15,8 @@ This file is the only task-status source. Use `pending`, `in_progress`, `blocked
 
 ## Phase 7 tasks
 
+Post-submission enhancement: recovery progress guidance is implemented for PR review. Validation and scope are recorded in [the recovery progress report](phase-reports/08-recovery-progress.md).
+
 | Task | Status | Verification |
 |---|---|---|
 | Deploy the Rust API with persistent SQLite | completed | Container is healthy and the database survives restart |

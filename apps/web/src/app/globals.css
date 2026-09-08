@@ -759,6 +759,14 @@ code {
   }
 }
 
+.recovery-progress { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--border, #334155); border-radius: 12px; }
+.recovery-stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; padding: 0; list-style: none; }
+.recovery-stages li { padding: .75rem; border: 1px solid #475569; border-radius: 8px; }
+.recovery-stages li[aria-current="step"] { border-color: #67e8f9; }
+.recovery-stages small { display: block; margin-top: .35rem; }
+.recovery-plan-id code { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .recovery-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

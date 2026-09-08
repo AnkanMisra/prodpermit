@@ -49,6 +49,7 @@ Status: `in_progress`
 
 ## Current work
 
+- Recovery progress enhancement: explicit Prepare, Approve, Execute, and Verify guidance is implemented in an isolated feature branch. See `docs/phase-reports/08-recovery-progress.md`.
 - Confirm the participant-specific Devpost form selections in `devpost-submission.md`.
 - Finalize the Devpost draft after the video URL is available.
 - Record and publish the public narrated demo video.
