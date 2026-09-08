@@ -43,6 +43,7 @@ This lets the agent investigate and recommend while the person controls the prod
 Use ChatGPT's in-app browser or Chrome 149 or later with `chrome://flags/#enable-webmcp-testing` enabled.
 
 1. Open the [live ProdPermit application](https://recovery-control-room.vercel.app).
+   If you previously completed the demo, click **Reset scenario** to start a fresh incident. Reset invalidates plans from your previous session.
 2. Confirm that `checkout-api` is critical on `release_284` with an 18.7% error rate.
 3. Give the agent this task:
 
